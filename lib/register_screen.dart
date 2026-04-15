@@ -223,13 +223,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: isDark ? Colors.white : AppTheme.primaryDark,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: false,
         actions: [
           AnimatedThemeSwitcher(
             isDark: isDark,
@@ -624,3 +618,6 @@ class MeshGradientPainter extends CustomPainter {
         oldDelegate.isDark != isDark;
   }
 }
+
+
+

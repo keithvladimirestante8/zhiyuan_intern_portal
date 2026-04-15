@@ -10,15 +10,9 @@ class AppTheme {
   
   /// Primary brand accent - Premium Bronze/Gold
   static const Color primaryGold = Color(0xFFC2A984);
-  
+
   /// Primary dark color - Deep Slate Grey/Onyx Black
   static const Color primaryDark = Color(0xFF1A1C20);
-  
-  /// Corporate Navy Blue
-  static const Color corporateBlue = Color(0xFF1E3A8A);
-  
-  /// Navy Blue variant (used in login)
-  static const Color navyBlue = Color(0xFF1A237E);
 
   // ==================== BACKGROUND SYSTEM ====================
   
@@ -193,7 +187,7 @@ class AppTheme {
       fontFamily: 'Inter',
       colorScheme: const ColorScheme.light(
         primary: primaryGold,
-        secondary: corporateBlue,
+        secondary: gradient2Light,
         surface: cardBgLight,
         background: mainThemeBgLight,
         error: error,
@@ -210,7 +204,7 @@ class AppTheme {
       fontFamily: 'Inter',
       colorScheme: const ColorScheme.dark(
         primary: primaryGold,
-        secondary: corporateBlue,
+        secondary: gradient2Dark,
         surface: cardBgDark,
         background: mainThemeBgDark,
         error: error,

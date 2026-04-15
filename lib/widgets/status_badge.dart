@@ -124,9 +124,9 @@ class StatusBadge extends StatelessWidget {
         );
       case BadgeType.corporate:
         return BadgeStyle(
-          backgroundColor: AppTheme.corporateBlue,
+          backgroundColor: isDark ? AppTheme.gradient2Dark : AppTheme.gradient2Light,
           textColor: Colors.white,
-          borderColor: AppTheme.corporateBlue,
+          borderColor: isDark ? AppTheme.gradient2Dark : AppTheme.gradient2Light,
         );
     }
   }

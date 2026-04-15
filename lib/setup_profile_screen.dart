@@ -374,6 +374,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
       }
 
       try {
+        final bool isDark = Theme.of(context).brightness == Brightness.dark;
         showDialog(
           context: context,
           barrierDismissible: true,
@@ -384,20 +385,20 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
               width: MediaQuery.of(context).size.width * 0.9,
               height: MediaQuery.of(context).size.height * 0.8,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? const Color(0xFF1A1C20) : Colors.white,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Column(
                 children: [
                   AppBar(
-                    backgroundColor: AppTheme.navyBlue,
-                    title: const Text(
+                    backgroundColor: isDark ? AppTheme.gradient2Dark : AppTheme.gradient2Light,
+                    title: Text(
                       "PDF PREVIEW",
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(color: isDark ? Colors.white : AppTheme.primaryDark),
                     ),
                     actions: [
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
+                        icon: Icon(Icons.close, color: isDark ? Colors.white : AppTheme.primaryDark),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
