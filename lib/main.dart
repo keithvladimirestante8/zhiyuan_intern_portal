@@ -1,50 +1,96 @@
-import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+
+import 'core/utils/ui_preference_manager.dart';
+import 'dashboard_screen.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
+import 'services/auth_service.dart';
 
-// Global theme notifier for app-wide theme access
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  final authService = AuthService();
+  await authService.initialize();
+  await UIPreferenceManager.initialize();
+  await UIPreferenceManager.applyUserPreferences();
+
   runApp(const ZhiyuanApp());
 }
 
-class ZhiyuanApp extends StatelessWidget {
+class ZhiyuanApp extends StatefulWidget {
   const ZhiyuanApp({super.key});
 
   @override
+  State<ZhiyuanApp> createState() => _ZhiyuanAppState();
+}
+
+class _ZhiyuanAppState extends State<ZhiyuanApp> with WidgetsBindingObserver {
+  final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    _authService.logoutStream.listen((shouldLogout) {
+      if (shouldLogout) {
+        _handleGlobalLogout();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _authService.handleLifecycleChange(state);
+  }
+
+  void _handleGlobalLogout() {
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Listen to theme changes
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (_, currentMode, __) {
-        return MaterialApp(
-          title: 'Zhiyuan Intern Portal',
-          debugShowCheckedModeBanner: false,
-          themeMode: currentMode, // Use current theme mode
+        return Listener(
+          onPointerDown: (_) => _authService.recordUserActivity(),
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            title: 'Zhiyuan Intern Portal',
+            debugShowCheckedModeBanner: false,
+            themeMode: currentMode,
+            theme: ThemeData(
+              brightness: Brightness.light,
+              useMaterial3: true,
+              fontFamily: 'Inter',
+            ),
+            darkTheme: ThemeData(
+              brightness: Brightness.dark,
+              useMaterial3: true,
+              fontFamily: 'Inter',
+            ),
 
-          // Light theme settings
-          theme: ThemeData(
-            brightness: Brightness.light,
-            scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-            useMaterial3: true,
-            fontFamily: 'Inter',
+            // AUTOMATIC ROUTING: Check if user session is valid on startup
+            home: FirebaseAuth.instance.currentUser != null
+                ? const DashboardScreen()
+                : const LoginScreen(),
           ),
-
-          // Dark theme settings
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            scaffoldBackgroundColor: const Color(0xFF0F171C),
-            useMaterial3: true,
-            fontFamily: 'Inter',
-          ),
-
-          home: const LoginScreen(),
         );
       },
     );

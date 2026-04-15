@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -7,6 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'main.dart';
+import 'theme/app_theme.dart';
+import 'widgets/animated_theme_switcher.dart';
+import 'widgets/custom_button.dart';
+import 'core/utils/ultra_battery_saver.dart';
+import 'core/utils/battery_manager.dart';
+import 'core/constants/app_constants.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -31,22 +38,33 @@ class _RegisterScreenState extends State<RegisterScreen>
   String _strengthText = "Security: Undefined";
   Color _strengthColor = Colors.grey;
 
-  static const Color zLogoGold = Color(0xFFC2A984);
-  static const Color zOnyxBlack = Color(0xFF1A1C20);
-
   @override
   void initState() {
     super.initState();
 
+    UltraBatterySaver.initialize();
+    BatteryManager.initialize();
+    AppConstants.updateFromUserPreferences(); // Apply user settings
+
     _bgAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 20),
-    )..repeat();
+      duration: Duration(seconds: AppConstants.backgroundAnimationDurationSec),
+    );
+
+    if (AppConstants.shouldEnableBackgroundAnimations) {
+      _bgAnimationController.repeat();
+    }
 
     _entryController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..forward();
+      duration: Duration(milliseconds: AppConstants.adaptiveAnimationDuration),
+    );
+
+    if (AppConstants.shouldEnableAnyAnimations) {
+      _entryController.forward();
+    } else {
+      _entryController.value = 1.0;
+    }
   }
 
   void _checkPassword(String value) {
@@ -91,7 +109,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         _strengthColor = Colors.blueAccent;
       } else {
         _strengthText = "Security: Executive Grade";
-        _strengthColor = zLogoGold;
+        _strengthColor = AppTheme.primaryGold;
       }
     });
   }
@@ -100,9 +118,11 @@ class _RegisterScreenState extends State<RegisterScreen>
   void dispose() {
     _bgAnimationController.dispose();
     _entryController.dispose();
+
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    UltraBatterySaver.dispose();
     super.dispose();
   }
 
@@ -157,12 +177,12 @@ class _RegisterScreenState extends State<RegisterScreen>
           .collection('users')
           .doc(userCredential.user!.uid)
           .set({
-            'uid': userCredential.user!.uid,
-            'email': email,
-            'role': 'intern',
-            'profile_setup_completed': false,
-            'created_at': FieldValue.serverTimestamp(),
-          });
+        'uid': userCredential.user!.uid,
+        'email': email,
+        'role': 'intern',
+        'profile_setup_completed': false,
+        'created_at': FieldValue.serverTimestamp(),
+      });
 
       await userCredential.user?.sendEmailVerification();
       _showSnackbar("Account Initialized! Verification sent.", isError: false);
@@ -180,8 +200,9 @@ class _RegisterScreenState extends State<RegisterScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: isError ? Colors.redAccent : Colors.green,
-        content: Text(msg),
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -196,8 +217,8 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     return Scaffold(
       backgroundColor: isDark
-          ? const Color(0xFF0A0A0F)
-          : const Color(0xFFF8F9FA),
+          ? AppTheme.dashboardBaseDark
+          : AppTheme.dashboardBgLight,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -205,21 +226,14 @@ class _RegisterScreenState extends State<RegisterScreen>
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,
-            color: isDark ? Colors.white : zOnyxBlack,
+            color: isDark ? Colors.white : AppTheme.primaryDark,
           ),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          Icon(
-            isDark ? Icons.nightlight_round : Icons.wb_sunny_rounded,
-            color: zLogoGold,
-            size: 18,
-          ),
-          Switch(
-            value: isDark,
-            activeColor: zLogoGold,
+          AnimatedThemeSwitcher(
+            isDark: isDark,
             onChanged: (v) {
-              HapticFeedback.selectionClick();
               themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
             },
           ),
@@ -241,7 +255,6 @@ class _RegisterScreenState extends State<RegisterScreen>
               },
             ),
           ),
-
           Positioned.fill(
             child: Opacity(
               opacity: 0.02,
@@ -255,7 +268,6 @@ class _RegisterScreenState extends State<RegisterScreen>
               ),
             ),
           ),
-
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -267,16 +279,15 @@ class _RegisterScreenState extends State<RegisterScreen>
                     curve: Curves.easeIn,
                   ),
                   child: SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(0, 0.1),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: _entryController,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.1),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: _entryController,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(32),
                       child: BackdropFilter(
@@ -292,6 +303,16 @@ class _RegisterScreenState extends State<RegisterScreen>
                               ),
                               width: 1.5,
                             ),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withOpacity(
+                                  isDark ? 0.08 : 0.4,
+                                ),
+                                Colors.white.withOpacity(0.0),
+                              ],
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(
@@ -305,28 +326,33 @@ class _RegisterScreenState extends State<RegisterScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // 3D rotating logo
-                              AnimatedBuilder(
-                                animation: _bgAnimationController,
-                                builder: (context, child) {
-                                  return Transform(
-                                    alignment: Alignment.center,
-                                    transform: Matrix4.identity()
-                                      ..setEntry(3, 2, 0.002)
-                                      ..rotateY(
-                                        _bgAnimationController.value *
-                                            2 *
-                                            math.pi *
-                                            5,
-                                      ),
-                                    child: child,
-                                  );
-                                },
-                                child: Image.asset(
+                              if (AppConstants.shouldEnableBackgroundAnimations)
+                                AnimatedBuilder(
+                                  animation: _bgAnimationController,
+                                  builder: (context, child) {
+                                    return Transform(
+                                      alignment: Alignment.center,
+                                      transform: Matrix4.identity()
+                                        ..setEntry(3, 2, 0.002)
+                                        ..rotateY(
+                                          _bgAnimationController.value *
+                                              2 *
+                                              math.pi *
+                                              5,
+                                        ),
+                                      child: child,
+                                    );
+                                  },
+                                  child: Image.asset(
+                                    'assets/images/zhiyuan_logo.png',
+                                    height: 75,
+                                  ),
+                                )
+                              else
+                                Image.asset(
                                   'assets/images/zhiyuan_logo.png',
                                   height: 75,
                                 ),
-                              ),
                               const SizedBox(height: 20),
                               Text(
                                 'INTERN ENROLLMENT',
@@ -346,7 +372,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 ),
                               ),
                               const SizedBox(height: 40),
-
                               _buildField(
                                 _emailController,
                                 "Authorized Email",
@@ -354,7 +379,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 isDark,
                               ),
                               const SizedBox(height: 20),
-
                               _buildField(
                                 _passwordController,
                                 "Set Access Password",
@@ -363,14 +387,12 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 isPass: true,
                                 onChanged: _checkPassword,
                               ),
-
                               const SizedBox(height: 15),
-
                               Column(
                                 children: [
                                   Row(
                                     mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         _strengthText,
@@ -401,7 +423,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   ),
                                 ],
                               ),
-
                               const SizedBox(height: 20),
                               _buildField(
                                 _confirmPasswordController,
@@ -410,7 +431,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 isDark,
                                 isPass: true,
                               ),
-
                               const SizedBox(height: 40),
                               _buildRegisterButton(isDark),
                             ],
@@ -429,13 +449,13 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildField(
-    TextEditingController controller,
-    String label,
-    IconData icon,
-    bool isDark, {
-    bool isPass = false,
-    Function(String)? onChanged,
-  }) {
+      TextEditingController controller,
+      String label,
+      IconData icon,
+      bool isDark, {
+        bool isPass = false,
+        Function(String)? onChanged,
+      }) {
     return Container(
       decoration: BoxDecoration(
         boxShadow: [
@@ -457,19 +477,19 @@ class _RegisterScreenState extends State<RegisterScreen>
             color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
             fontSize: 13,
           ),
-          prefixIcon: Icon(icon, color: zLogoGold, size: 20),
+          prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
           suffixIcon: isPass
               ? IconButton(
-                  icon: Icon(
-                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                    color: Colors.grey,
-                    size: 18,
-                  ),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _obscurePassword = !_obscurePassword);
-                  },
-                )
+            icon: Icon(
+              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+              color: Colors.grey,
+              size: 18,
+            ),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              setState(() => _obscurePassword = !_obscurePassword);
+            },
+          )
               : null,
           filled: true,
           fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
@@ -479,7 +499,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: zLogoGold, width: 1.5),
+            borderSide: const BorderSide(color: AppTheme.primaryGold, width: 1.5),
           ),
         ),
       ),
@@ -487,7 +507,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildRegisterButton(bool isDark) {
-    Color btnColor = isDark ? zLogoGold : zOnyxBlack;
+    Color btnColor = isDark ? AppTheme.primaryGold : AppTheme.primaryDark;
     return Container(
       width: double.infinity,
       height: 55,
@@ -501,33 +521,13 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
         ],
       ),
-      child: ElevatedButton(
+      child: CustomButton(
+        text: 'INITIALIZE ACCOUNT',
         onPressed: _isLoading ? null : _handleRegistration,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: btnColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Text(
-                'INITIALIZE ACCOUNT',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  fontSize: 14,
-                ),
-              ),
+        variant: ButtonVariant.primary,
+        size: ButtonSize.medium,
+        isLoading: _isLoading,
+        isFullWidth: true,
       ),
     );
   }
@@ -619,5 +619,8 @@ class MeshGradientPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant MeshGradientPainter oldDelegate) => true;
+  bool shouldRepaint(covariant MeshGradientPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue ||
+        oldDelegate.isDark != isDark;
+  }
 }

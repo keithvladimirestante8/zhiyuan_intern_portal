@@ -7,9 +7,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'login_screen.dart';
+import 'collapsible_sidebar.dart';
+import 'core/constants/app_constants.dart';
+import 'core/utils/battery_manager.dart';
+import 'core/utils/ultra_battery_saver.dart';
 import 'main.dart';
+import 'settings_screen.dart';
 import 'setup_profile_screen.dart';
+import 'theme/app_theme.dart';
+import 'widgets/animated_theme_switcher.dart';
+import 'widgets/custom_button.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -37,24 +44,42 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _hasTimedIn = false;
   bool _hasTimedOut = false;
 
-  static const Color zLogoGold = Color(0xFFC2A984);
-  static const Color zOnyxBlack = Color(0xFF1A1C20);
+  int _selectedIndex = 0;
+
+  final List<String> _screenTitles = [
+    'ZHIYUAN DASHBOARD',
+    'MY PROFILE',
+    'ATTENDANCE HISTORY',
+    'SETTINGS',
+  ];
 
   @override
   void initState() {
     super.initState();
 
-    // Background animation
+    UltraBatterySaver.initialize();
+    BatteryManager.initialize();
+    AppConstants.updateFromUserPreferences();
+
     _bgAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 20),
-    )..repeat();
+      duration: Duration(seconds: AppConstants.backgroundAnimationDurationSec),
+    );
 
-    // Entry animations
+    if (AppConstants.shouldEnableBackgroundAnimations) {
+      _bgAnimationController.repeat();
+    }
+
     _entryController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..forward();
+      duration: Duration(milliseconds: AppConstants.adaptiveAnimationDuration),
+    );
+
+    if (AppConstants.shouldEnableAnyAnimations) {
+      _entryController.forward();
+    } else {
+      _entryController.value = 1.0;
+    }
 
     _timer = Timer.periodic(
       const Duration(seconds: 1),
@@ -104,8 +129,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           Duration difference = timeOut.toDate().difference(timeIn.toDate());
 
           double shiftHours = difference.inMinutes / 60.0;
-
-          // Smart lunch deduction
           if (shiftHours >= 5.0) shiftHours -= 1.0;
 
           totalHours += shiftHours;
@@ -129,6 +152,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _bgAnimationController.dispose();
     _entryController.dispose();
     _timer.cancel();
+    UltraBatterySaver.dispose();
     super.dispose();
   }
 
@@ -179,6 +203,300 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _buildSidebar(bool isDark, Color textColor, {required bool isMobile}) {
+    return CollapsibleSidebar(
+      key: ValueKey(isMobile),
+      displayName: _displayName,
+      user: user,
+      bgAnimationController: _bgAnimationController,
+      isDark: isDark,
+      textColor: textColor,
+      isMobile: isMobile,
+      selectedIndex: _selectedIndex,
+      onItemSelected: (index) {
+        setState(() {
+          _selectedIndex = index;
+        });
+        if (isMobile) {
+          Navigator.pop(context);
+        }
+      },
+      onToggle: (expanded) {
+        if (!isMobile) setState(() {});
+      },
+    );
+  }
+
+  Widget _buildCustomHeader(bool isDesktop, bool isDark, Color textColor) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 16.0,
+        bottom: 8.0,
+        left: 16.0,
+        right: 24.0,
+      ),
+      child: Row(
+        children: [
+          if (!isDesktop) ...[
+            Builder(
+              builder: (context) => IconButton(
+                icon: Icon(
+                  Icons.menu_rounded,
+                  color: isDark ? Colors.white : AppTheme.primaryDark,
+                ),
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (isDesktop) const SizedBox(width: 16),
+
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Text(
+                _screenTitles[_selectedIndex],
+                key: ValueKey<int>(_selectedIndex),
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppTheme.primaryDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+          ),
+
+          AnimatedThemeSwitcher(
+            isDark: isDark,
+            onChanged: (v) {
+              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveContent(
+    bool isDesktop,
+    bool isDark,
+    Color textColor,
+    Color cardBg,
+    double clampedProgress,
+  ) {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildDashboardContent(
+          isDesktop,
+          isDark,
+          textColor,
+          cardBg,
+          clampedProgress,
+        );
+      case 1:
+        return const SetupProfileScreen();
+      case 2:
+        return Center(
+          child: Text(
+            "Attendance History Phase 4 Module",
+            style: TextStyle(
+              color: textColor,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      case 3:
+        return const SettingsScreen();
+      default:
+        return _buildDashboardContent(
+          isDesktop,
+          isDark,
+          textColor,
+          cardBg,
+          clampedProgress,
+        );
+    }
+  }
+
+  Widget _buildDashboardContent(
+    bool isDesktop,
+    bool isDark,
+    Color textColor,
+    Color cardBg,
+    double clampedProgress,
+  ) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _entryController,
+              curve: const Interval(0.0, 0.4),
+            ),
+            child: SlideTransition(
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: _entryController,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Overview',
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.grey.shade400
+                          : Colors.grey.shade600,
+                      fontSize: 13,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    _displayName.toUpperCase(),
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (isDesktop)
+            FadeTransition(
+              opacity: CurvedAnimation(
+                parent: _entryController,
+                curve: const Interval(0.2, 0.6),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 7,
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildGlassCard(
+                                cardBg: cardBg,
+                                isDark: isDark,
+                                padding: const EdgeInsets.all(20),
+                                child: _StatCardContent(
+                                  title: "Total Hours",
+                                  value: _hoursRendered.toStringAsFixed(1),
+                                  icon: Icons.timer_outlined,
+                                  textColor: textColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: _buildGlassCard(
+                                cardBg: cardBg,
+                                isDark: isDark,
+                                padding: const EdgeInsets.all(20),
+                                child: _StatCardContent(
+                                  title: "Shifts Done",
+                                  value: _shiftsDone.toString(),
+                                  icon: Icons.task_alt_rounded,
+                                  textColor: textColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: _buildGlassCard(
+                                cardBg: cardBg,
+                                isDark: isDark,
+                                padding: const EdgeInsets.all(20),
+                                child: _StatCardContent(
+                                  title: "Target Hours",
+                                  value: _requiredHours.toStringAsFixed(0),
+                                  icon: Icons.flag_outlined,
+                                  textColor: textColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        _buildProgressCard(
+                          cardBg,
+                          isDark,
+                          textColor,
+                          clampedProgress,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    flex: 3,
+                    child: _buildTimeInCard(cardBg, isDark, textColor),
+                  ),
+                ],
+              ),
+            )
+          else
+            Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildGlassCard(
+                        cardBg: cardBg,
+                        isDark: isDark,
+                        padding: const EdgeInsets.all(20),
+                        child: _StatCardContent(
+                          title: "Total Hours",
+                          value: _hoursRendered.toStringAsFixed(1),
+                          icon: Icons.timer_outlined,
+                          textColor: textColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: _buildGlassCard(
+                        cardBg: cardBg,
+                        isDark: isDark,
+                        padding: const EdgeInsets.all(20),
+                        child: _StatCardContent(
+                          title: "Shifts Done",
+                          value: _shiftsDone.toString(),
+                          icon: Icons.task_alt_rounded,
+                          textColor: textColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                _buildProgressCard(cardBg, isDark, textColor, clampedProgress),
+                const SizedBox(height: 15),
+                _buildTimeInCard(cardBg, isDark, textColor),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -187,6 +505,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? const Color(0x1AFFFFFF)
         : const Color(0xE6FFFFFF);
 
+    final Size screenSize = MediaQuery.of(context).size;
+    final bool isDesktop = screenSize.width >= 1024 && screenSize.height >= 600;
+
     double progress = (_requiredHours > 0)
         ? (_hoursRendered / _requiredHours)
         : 0.0;
@@ -194,303 +515,148 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       backgroundColor: isDark
-          ? const Color(0xFF0A0A0F)
-          : const Color(0xFFF8F9FA),
-      extendBodyBehindAppBar: true,
-      drawer: _buildSidebar(isDark, textColor),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : zOnyxBlack),
-        title: Text(
-          'ZHIYUAN DASHBOARD',
-          style: TextStyle(
-            color: isDark ? Colors.white : zOnyxBlack,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
-        ),
-        actions: [
-          Icon(
-            isDark ? Icons.nightlight_round : Icons.wb_sunny_rounded,
-            color: zLogoGold,
-            size: 20,
-          ),
-          Switch(
-            value: isDark,
-            activeColor: zLogoGold,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
-            },
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
-      body: Stack(
+          ? AppTheme.dashboardBaseDark
+          : AppTheme.dashboardBgLight,
+      extendBodyBehindAppBar: false,
+      drawer: !isDesktop
+          ? Drawer(
+              backgroundColor: isDark
+                  ? AppTheme.sidebarBgDark
+                  : AppTheme.sidebarBgLight,
+              elevation: 0,
+              child: _buildSidebar(isDark, textColor, isMobile: true),
+            )
+          : null,
+      body: Row(
         children: [
-          // 1. PREMIUM MESH GRADIENT BACKGROUND
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _bgAnimationController,
-              builder: (context, child) {
-                return CustomPaint(
-                  painter: MeshGradientPainter(
-                    animationValue: _bgAnimationController.value,
-                    isDark: isDark,
+          if (isDesktop) _buildSidebar(isDark, textColor, isMobile: false),
+          Expanded(
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: _bgAnimationController,
+                      builder: (context, child) {
+                        return CustomPaint(
+                          painter: MeshGradientPainter(
+                            animationValue: _bgAnimationController.value,
+                            isDark: isDark,
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                );
-              },
-            ),
-          ),
-
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.02,
-              child: Center(
-                child: Image.asset(
-                  'assets/images/zhiyuan_logo.png',
-                  width: MediaQuery.of(context).size.width * 0.6,
-                  height: MediaQuery.of(context).size.height * 0.6,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-
-          // 2. MAIN CONTENT
-          SafeArea(
-            child: _isLoading && _docId == null
-                ? const Center(
-                    child: CircularProgressIndicator(color: zLogoGold),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: 0.02,
+                      child: Center(
+                        child: Image.asset(
+                          'assets/images/zhiyuan_logo.png',
+                          width: MediaQuery.of(context).size.width * 0.6,
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SafeArea(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.0, 0.5),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(
-                                      0.0,
-                                      0.5,
-                                      curve: Curves.easeOut,
-                                    ),
+                        _buildCustomHeader(isDesktop, isDark, textColor),
+                        Expanded(
+                          child: _isLoading && _docId == null
+                              ? const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppTheme.primaryGold,
+                                  ),
+                                )
+                              : AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  transitionBuilder:
+                                      (
+                                        Widget child,
+                                        Animation<double> animation,
+                                      ) {
+                                        return FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        );
+                                      },
+                                  child: _buildActiveContent(
+                                    isDesktop,
+                                    isDark,
+                                    textColor,
+                                    cardBg,
+                                    clampedProgress,
                                   ),
                                 ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Welcome Back,',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? Colors.grey.shade400
-                                        : Colors.grey.shade600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  _displayName.toUpperCase(),
-                                  style: TextStyle(
-                                    color: textColor,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-
-                        // --- PROGRESS SECTION ---
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.2, 0.7),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(
-                                      0.2,
-                                      0.7,
-                                      curve: Curves.easeOut,
-                                    ),
-                                  ),
-                                ),
-                            child: _buildGlassCard(
-                              cardBg: cardBg,
-                              isDark: isDark,
-                              child: Column(
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        "Completion Progress",
-                                        style: TextStyle(
-                                          color: textColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        "${(clampedProgress * 100).toStringAsFixed(1)}%",
-                                        style: const TextStyle(
-                                          color: zLogoGold,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 15),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: LinearProgressIndicator(
-                                      value: clampedProgress,
-                                      backgroundColor: Colors.grey.withOpacity(
-                                        isDark ? 0.2 : 0.3,
-                                      ),
-                                      color: zLogoGold,
-                                      minHeight: 10,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        "${_hoursRendered.toStringAsFixed(1)} Hrs Rendered",
-                                        style: TextStyle(
-                                          color: isDark
-                                              ? Colors.grey.shade400
-                                              : Colors.grey.shade700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      Text(
-                                        "Target: $_requiredHours Hrs",
-                                        style: TextStyle(
-                                          color: isDark
-                                              ? Colors.grey.shade400
-                                              : Colors.grey.shade700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // --- STATS ROW ---
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.4, 0.9),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(
-                                      0.4,
-                                      0.9,
-                                      curve: Curves.easeOut,
-                                    ),
-                                  ),
-                                ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _buildGlassCard(
-                                    cardBg: cardBg,
-                                    isDark: isDark,
-                                    child: _StatCardContent(
-                                      title: "Total Hours",
-                                      value: _hoursRendered.toStringAsFixed(1),
-                                      icon: Icons.timer_rounded,
-                                      textColor: textColor,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 15),
-                                Expanded(
-                                  child: _buildGlassCard(
-                                    cardBg: cardBg,
-                                    isDark: isDark,
-                                    child: _StatCardContent(
-                                      title: "Shifts Done",
-                                      value: _shiftsDone.toString(),
-                                      icon: Icons.task_alt_rounded,
-                                      textColor: textColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        // --- TIME IN CARD ---
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.6, 1.0),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(
-                                      0.6,
-                                      1.0,
-                                      curve: Curves.easeOut,
-                                    ),
-                                  ),
-                                ),
-                            child: _buildTimeInCard(cardBg, isDark, textColor),
-                          ),
                         ),
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressCard(
+    Color cardBg,
+    bool isDark,
+    Color textColor,
+    double clampedProgress,
+  ) {
+    return _buildGlassCard(
+      cardBg: cardBg,
+      isDark: isDark,
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Completion Progress",
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  "${(clampedProgress * 100).toStringAsFixed(1)}%",
+                  style: const TextStyle(
+                    color: AppTheme.primaryGold,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: clampedProgress,
+              backgroundColor: Colors.grey.withOpacity(isDark ? 0.2 : 0.3),
+              color: AppTheme.primaryGold,
+              minHeight: 8,
+            ),
           ),
         ],
       ),
@@ -500,34 +666,27 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildGlassCard({
     required Color cardBg,
     required bool isDark,
+    required EdgeInsets padding,
     required Widget child,
   }) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
+      borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          padding: const EdgeInsets.all(28),
+          padding: padding,
           decoration: BoxDecoration(
             color: cardBg,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withOpacity(isDark ? 0.08 : 0.6),
-              width: 1.5,
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(isDark ? 0.08 : 0.4),
-                Colors.white.withOpacity(0.0),
-              ],
+              color: Colors.white.withOpacity(isDark ? 0.05 : 0.4),
+              width: 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
-                blurRadius: 50,
-                spreadRadius: 10,
+                color: Colors.black.withOpacity(isDark ? 0.15 : 0.03),
+                blurRadius: 30,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -539,14 +698,14 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildTimeInCard(Color cardBg, bool isDark, Color textColor) {
     String txt = !_hasTimedIn
-        ? "INITIALIZE TIME-IN"
-        : (_hasTimedOut ? "SHIFT COMPLETED" : "RECORD TIME-OUT");
+        ? "TIME-IN"
+        : (_hasTimedOut ? "COMPLETED" : "TIME-OUT");
 
     Color btnBgColor = !_hasTimedIn
-        ? zLogoGold
+        ? AppTheme.primaryGold
         : (_hasTimedOut
               ? (isDark ? Colors.grey.shade800 : Colors.grey.shade300)
-              : Colors.redAccent);
+              : const Color(0xFFE53935));
 
     Color btnTxtColor = !_hasTimedIn
         ? Colors.black
@@ -555,179 +714,83 @@ class _DashboardScreenState extends State<DashboardScreen>
     return _buildGlassCard(
       cardBg: cardBg,
       isDark: isDark,
+      padding: const EdgeInsets.all(24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'DAILY TIME RECORD',
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.5,
-                  fontSize: 12,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.access_time_rounded,
+                  color: AppTheme.primaryGold,
+                  size: 18,
                 ),
               ),
-              const Icon(
-                Icons.calendar_today_rounded,
-                color: zLogoGold,
-                size: 18,
+              const SizedBox(width: 12),
+              Text(
+                'DAILY RECORD',
+                style: TextStyle(
+                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  fontSize: 11,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-
-          // LARGE CLOCK
-          Text(
-            "${_currentTime.hour > 12 ? _currentTime.hour - 12 : (_currentTime.hour == 0 ? 12 : _currentTime.hour)}:${_currentTime.minute.toString().padLeft(2, '0')} ${_currentTime.hour >= 12 ? 'PM' : 'AM'}",
-            style: TextStyle(
-              color: textColor,
-              fontSize: 48,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+          const SizedBox(height: 24),
+          Center(
+            child: Text(
+              "${_currentTime.hour > 12 ? _currentTime.hour - 12 : (_currentTime.hour == 0 ? 12 : _currentTime.hour)}:${_currentTime.minute.toString().padLeft(2, '0')}",
+              style: TextStyle(
+                color: textColor,
+                fontSize: 42,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+              ),
             ),
           ),
-
-          const SizedBox(height: 30),
-
-          // ACTION BUTTON
+          Center(
+            child: Text(
+              _currentTime.hour >= 12 ? 'PM' : 'AM',
+              style: const TextStyle(
+                color: AppTheme.primaryGold,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
           Container(
             width: double.infinity,
-            height: 60,
+            height: 50,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 if (!_hasTimedOut && !_isLoading)
                   BoxShadow(
-                    color: btnBgColor.withOpacity(0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
+                    color: btnBgColor.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
               ],
             ),
-            child: ElevatedButton(
+            child: CustomButton(
+              text: txt,
               onPressed: _hasTimedOut || _isLoading ? null : _handleDTRAction,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: btnBgColor,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Text(
-                      txt,
-                      style: TextStyle(
-                        color: btnTxtColor,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                        fontSize: 15,
-                      ),
-                    ),
+              variant: ButtonVariant.primary,
+              size: ButtonSize.small,
+              isLoading: _isLoading,
+              isFullWidth: true,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidebar(bool isDark, Color textColor) {
-    return Drawer(
-      backgroundColor: isDark
-          ? const Color(0xFF0F171C)
-          : const Color(0xFFF8F9FA),
-      child: Column(
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: zLogoGold.withOpacity(0.2)),
-              ),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset('assets/images/zhiyuan_logo.png', height: 60),
-                  const SizedBox(height: 10),
-                  const Text(
-                    "ZHIYUAN PORTAL",
-                    style: TextStyle(
-                      color: zLogoGold,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          ListTile(
-            leading: const Icon(Icons.person_outline_rounded, color: zLogoGold),
-            title: Text(
-              "My Profile",
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const SetupProfileScreen(),
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.history_rounded, color: zLogoGold),
-            title: Text(
-              "Attendance History",
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            onTap: () {} /* Phase 4 */,
-          ),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              tileColor: Colors.redAccent.withOpacity(0.1),
-              leading: const Icon(
-                Icons.logout_rounded,
-                color: Colors.redAccent,
-              ),
-              title: const Text(
-                "Secure Logout",
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              onTap: () {
-                HapticFeedback.heavyImpact();
-                FirebaseAuth.instance.signOut().then(
-                  (_) => Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const LoginScreen(),
-                    ),
-                    (route) => false,
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
         ],
       ),
     );
@@ -738,6 +801,7 @@ class _StatCardContent extends StatelessWidget {
   final String title, value;
   final IconData icon;
   final Color textColor;
+
   const _StatCardContent({
     required this.title,
     required this.value,
@@ -750,22 +814,32 @@ class _StatCardContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: const Color(0xFFC2A984), size: 28),
-        const SizedBox(height: 15),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryGold.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: AppTheme.primaryGold, size: 22),
+        ),
+        const SizedBox(height: 16),
         Text(
           value,
           style: TextStyle(
             color: textColor,
-            fontSize: 26,
-            fontWeight: FontWeight.w900,
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
           ),
         ),
+        const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
-            color: Colors.grey,
+          style: TextStyle(
+            color: textColor.withOpacity(0.6),
             fontSize: 12,
             fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
           ),
         ),
       ],
@@ -773,7 +847,6 @@ class _StatCardContent extends StatelessWidget {
   }
 }
 
-// --- CUSTOM PAINTER FOR MESH GRADIENT (ZHIYUAN THEME) ---
 class MeshGradientPainter extends CustomPainter {
   final double animationValue;
   final bool isDark;
@@ -783,16 +856,14 @@ class MeshGradientPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Color color1 = isDark
-        ? const Color(0xFFCC5500).withOpacity(0.6) // Burnt Orange
-        : const Color(0xFFFFDAB9).withOpacity(0.8); // Soft Peach
-
+        ? AppTheme.gradient1Dark.withOpacity(0.6)
+        : AppTheme.gradient1Light.withOpacity(0.8);
     final Color color2 = isDark
-        ? const Color(0xFFC2A984).withOpacity(0.5) // Zhiyuan Gold
-        : const Color(0xFFEADDCA).withOpacity(0.7); // Pale Gold
-
+        ? AppTheme.gradient2Dark.withOpacity(0.5)
+        : AppTheme.gradient2Light.withOpacity(0.7);
     final Color color3 = isDark
-        ? const Color(0xFF8B4513).withOpacity(0.4) // Rust/Copper for depth
-        : const Color(0xFFFFF0DF).withOpacity(0.6); // Warm Beige
+        ? AppTheme.gradient3Dark.withOpacity(0.4)
+        : AppTheme.gradient3Light.withOpacity(0.6);
 
     final double w = size.width;
     final double h = size.height;
@@ -801,12 +872,10 @@ class MeshGradientPainter extends CustomPainter {
         w * 0.5 + math.sin(animationValue * math.pi * 2) * w * 0.3;
     final double y1 =
         h * 0.2 + math.cos(animationValue * math.pi * 2) * h * 0.2;
-
     final double x2 =
         w * 0.8 + math.cos(animationValue * math.pi * 2 * 1.5) * w * 0.2;
     final double y2 =
         h * 0.7 + math.sin(animationValue * math.pi * 2 * 1.5) * h * 0.2;
-
     final double x3 =
         w * 0.2 + math.sin(animationValue * math.pi * 2 * 0.8) * w * 0.25;
     final double y3 =
@@ -836,7 +905,7 @@ class MeshGradientPainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, w, h),
       Paint()
-        ..color = isDark ? const Color(0xFF141619) : const Color(0xFFF8F9FA),
+        ..color = isDark ? AppTheme.dashboardBgDark : AppTheme.dashboardBgLight,
     );
 
     canvas.drawCircle(Offset(x1, y1), w * 0.8, paint1);
@@ -876,8 +945,5 @@ class MeshGradientPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant MeshGradientPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue ||
-        oldDelegate.isDark != isDark;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

@@ -1,7 +1,6 @@
 import 'dart:async' show Timer, TimeoutException;
 import 'dart:convert';
 import 'dart:io' show SocketException;
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,8 +14,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'core/constants/app_constants.dart';
+import 'core/utils/battery_manager.dart';
+import 'core/utils/ultra_battery_saver.dart';
 import 'dashboard_screen.dart';
-import 'main.dart';
+import 'theme/app_theme.dart';
+import 'widgets/custom_button.dart';
 
 class SetupProfileScreen extends StatefulWidget {
   const SetupProfileScreen({super.key});
@@ -40,8 +43,6 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   final FocusNode _courseFocusNode = FocusNode();
 
   Timer? _debounceTimer;
-
-  late AnimationController _bgAnimationController;
   late AnimationController _entryController;
 
   bool _isLoading = false;
@@ -51,11 +52,6 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   String? _uploadedResumeUrl;
   String _selectedGender = 'Male';
 
-  static const Color zLogoGold = Color(0xFFC2A984);
-  static const Color zNavyBlue = Color(0xFF1A237E);
-  static const Color zOnyxBlack = Color(0xFF1A1C20);
-
-  // Static aliases for normalization
   final Map<String, String> _schoolAliases = {
     "PTC": "Pateros Technological College",
     "RTU": "Rizal Technological College",
@@ -86,8 +82,24 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   @override
   void initState() {
     super.initState();
+
+    UltraBatterySaver.initialize();
+    BatteryManager.initialize();
+    AppConstants.updateFromUserPreferences(); // Apply user settings
+
     _checkExistingProfile();
     _fetchDynamicSuggestions();
+
+    _entryController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: AppConstants.adaptiveAnimationDuration),
+    );
+
+    if (AppConstants.shouldEnableAnyAnimations) {
+      _entryController.forward();
+    } else {
+      _entryController.value = 1.0;
+    }
 
     _usernameController.addListener(_onTextChanged);
     _phoneController.addListener(_onTextChanged);
@@ -95,16 +107,6 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     _schoolController.addListener(_onTextChanged);
     _courseController.addListener(_onTextChanged);
     _hoursController.addListener(_onTextChanged);
-
-    _bgAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    )..repeat();
-
-    _entryController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadDraft();
@@ -184,30 +186,28 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         final draft = json.decode(draftData) as Map<String, dynamic>;
         final savedAt = DateTime.parse(draft['savedAt']);
 
-        // Only load draft if less than 24 hours old
         if (DateTime.now().difference(savedAt).inHours < 24) {
           setState(() {
-            if (_usernameController.text.isEmpty)
+            if (_usernameController.text.isEmpty) {
               _usernameController.text = draft['username'] ?? "";
-            if (_phoneController.text.isEmpty)
+            }
+            if (_phoneController.text.isEmpty) {
               _phoneController.text = draft['phone'] ?? "";
-            if (_addressController.text.isEmpty)
+            }
+            if (_addressController.text.isEmpty) {
               _addressController.text = draft['address'] ?? "";
-            if (_schoolController.text.isEmpty)
+            }
+            if (_schoolController.text.isEmpty) {
               _schoolController.text = draft['school'] ?? "";
-            if (_courseController.text.isEmpty)
+            }
+            if (_courseController.text.isEmpty) {
               _courseController.text = draft['course'] ?? "";
-            if (_hoursController.text.isEmpty)
+            }
+            if (_hoursController.text.isEmpty) {
               _hoursController.text = draft['hours'] ?? "";
+            }
             _selectedGender = draft['gender'] ?? 'Male';
           });
-
-          if (mounted) {
-            _showSnackbar(
-              "Draft restored from ${savedAt.hour}:${savedAt.minute.toString().padLeft(2, '0')}",
-              Colors.blue,
-            );
-          }
         }
       }
     } catch (e) {
@@ -298,7 +298,6 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    _bgAnimationController.dispose();
     _entryController.dispose();
     _usernameController.dispose();
     _phoneController.dispose();
@@ -308,6 +307,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     _hoursController.dispose();
     _schoolFocusNode.dispose();
     _courseFocusNode.dispose();
+    UltraBatterySaver.dispose();
     super.dispose();
   }
 
@@ -362,12 +362,14 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
 
   void _handlePdfPreview() async {
     if (_selectedResumeBytes != null) {
-      // Check file size (5MB limit for mobile)
-      const fileSizeLimit = 5 * 1024 * 1024; // 5MB in bytes
+      const fileSizeLimit = 5 * 1024 * 1024;
       final isLargeFile = _selectedResumeBytes!.length > fileSizeLimit;
-      
+
       if (isLargeFile) {
-        _showSnackbar("File too large for preview. Please use a smaller PDF.", Colors.orange);
+        _showSnackbar(
+          "File too large for preview. Please use a smaller PDF.",
+          Colors.orange,
+        );
         return;
       }
 
@@ -388,11 +390,14 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
               child: Column(
                 children: [
                   AppBar(
-                    backgroundColor: zNavyBlue,
-                    title: const Text("PDF PREVIEW"),
+                    backgroundColor: AppTheme.navyBlue,
+                    title: const Text(
+                      "PDF PREVIEW",
+                      style: TextStyle(color: Colors.white),
+                    ),
                     actions: [
                       IconButton(
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(Icons.close, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -404,13 +409,12 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                         _selectedResumeBytes!,
                         canShowScrollHead: true,
                         canShowScrollStatus: true,
-                        onDocumentLoaded: (details) {
-                          debugPrint("PDF loaded successfully");
-                        },
                         onDocumentLoadFailed: (details) {
-                          debugPrint("PDF load failed: ${details.error}");
                           Navigator.pop(context);
-                          _showSnackbar("Failed to load PDF. Try a different file.", Colors.red);
+                          _showSnackbar(
+                            "Failed to load PDF. Try a different file.",
+                            Colors.red,
+                          );
                         },
                       ),
                     ),
@@ -421,22 +425,17 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
           ),
         );
       } catch (e) {
-        debugPrint("PDF preview error: $e");
         _showSnackbar("Unable to preview this PDF file.", Colors.red);
       }
     } else if (_uploadedResumeUrl != null) {
       try {
         final Uri url = Uri.parse(_uploadedResumeUrl!);
         if (await canLaunchUrl(url)) {
-          await launchUrl(
-            url,
-            mode: LaunchMode.externalApplication,
-          );
+          await launchUrl(url, mode: LaunchMode.externalApplication);
         } else {
           _showSnackbar("Cannot open resume URL", Colors.red);
         }
       } catch (e) {
-        debugPrint("URL launch error: $e");
         _showSnackbar("Failed to open resume", Colors.red);
       }
     }
@@ -540,7 +539,6 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
             'updated_at': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
-      // Clear draft upon successful save
       if (user != null) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('profile_draft_${user!.uid}');
@@ -597,6 +595,43 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     return filledFields / totalFields;
   }
 
+  Widget _buildProgressHeader(bool isDark, double progressValue) {
+    return Column(
+      children: [
+        Text(
+          'SETUP PROFILE',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+            color: isDark ? Colors.white : AppTheme.primaryDark,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${(progressValue * 100).toInt()}% COMPLETE',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.primaryGold,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: progressValue,
+            backgroundColor: isDark ? Colors.white10 : Colors.black12,
+            color: AppTheme.primaryGold,
+            minHeight: 6,
+          ),
+        ),
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -606,324 +641,216 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
 
     final double progressValue = _calculateProgress();
 
-    return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0A0A0F)
-          : const Color(0xFFF8F9FA),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'SETUP PROFILE',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-              ),
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _entryController,
+              curve: Curves.easeIn,
             ),
-            const SizedBox(height: 2),
-            Text(
-              '${(progressValue * 100).toInt()}% COMPLETE',
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: zLogoGold,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isDark ? Icons.nightlight_round : Icons.wb_sunny_rounded,
-              color: zLogoGold,
-              size: 18,
-            ),
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
-            },
-          ),
-          Switch(
-            value: isDark,
-            activeThumbColor: zLogoGold,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
-            },
-          ),
-          const SizedBox(width: 10),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3.0),
-          child: Container(
-            alignment: Alignment.centerLeft,
-            color: Colors.white.withOpacity(0.05),
-            height: 3.0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              width: MediaQuery.of(context).size.width * progressValue,
-              height: 3.0,
-              decoration: const BoxDecoration(
-                color: zLogoGold,
-                boxShadow: [
-                  BoxShadow(color: zLogoGold, blurRadius: 4, spreadRadius: 1),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _bgAnimationController,
-              builder: (context, child) {
-                return CustomPaint(
-                  painter: MeshGradientPainter(
-                    animationValue: _bgAnimationController.value,
-                    isDark: isDark,
+            child: SlideTransition(
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: _entryController,
+                      curve: Curves.easeOutCubic,
+                    ),
                   ),
-                );
-              },
-            ),
-          ),
-
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.05,
-              child: Center(
-                child: Image.asset(
-                  'assets/images/zhiyuan_logo.png',
-                  width: MediaQuery.of(context).size.width * 0.6,
-                  height: MediaQuery.of(context).size.height * 0.6,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: _entryController,
-                    curve: Curves.easeIn,
-                  ),
-                  child: SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(0, 0.1),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: _entryController,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
-                    child: ClipRRect(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  child: Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      color: cardBg,
                       borderRadius: BorderRadius.circular(32),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                        child: Container(
-                          padding: const EdgeInsets.all(40),
-                          decoration: BoxDecoration(
-                            color: cardBg,
-                            borderRadius: BorderRadius.circular(32),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(
-                                isDark ? 0.08 : 0.6,
-                              ),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(
-                                  isDark ? 0.2 : 0.05,
-                                ),
-                                blurRadius: 50,
-                                spreadRadius: 10,
-                              ),
-                            ],
+                      border: Border.all(
+                        color: Colors.white.withOpacity(isDark ? 0.08 : 0.6),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                          blurRadius: 50,
+                          spreadRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _entryController,
+                            curve: const Interval(0.0, 0.3),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              FadeTransition(
-                                opacity: CurvedAnimation(
-                                  parent: _entryController,
-                                  curve: const Interval(0.0, 0.3),
+                          child: SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.2),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _entryController,
+                                    curve: const Interval(0.0, 0.3),
+                                  ),
                                 ),
-                                child: SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(0, 0.2),
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: _entryController,
-                                          curve: const Interval(0.0, 0.3),
-                                        ),
-                                      ),
-                                  child: _buildProfilePic(),
-                                ),
-                              ),
-                              const SizedBox(height: 30),
-                              FadeTransition(
-                                opacity: CurvedAnimation(
-                                  parent: _entryController,
-                                  curve: const Interval(0.1, 0.5),
-                                ),
-                                child: SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(0, 0.15),
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: _entryController,
-                                          curve: const Interval(0.1, 0.5),
-                                        ),
-                                      ),
-                                  child: _buildCardContainer(cardBg, [
-                                    _buildTextField(
-                                      _usernameController,
-                                      "Full Name *",
-                                      Icons.person,
-                                      isDark,
-                                      autoCapitalize: true,
-                                    ),
-                                    const SizedBox(height: 15),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _buildGenderDropdown(isDark),
-                                        ),
-                                        const SizedBox(width: 15),
-                                        Expanded(
-                                          child: _buildTextField(
-                                            _hoursController,
-                                            "Req. Hours",
-                                            Icons.timer,
-                                            isDark,
-                                            isNumber: true,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 15),
-                                    _buildPhoneField(isDark),
-                                    const SizedBox(height: 15),
-                                    _buildTextField(
-                                      _addressController,
-                                      "Address",
-                                      Icons.home,
-                                      isDark,
-                                    ),
-                                  ]),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              FadeTransition(
-                                opacity: CurvedAnimation(
-                                  parent: _entryController,
-                                  curve: const Interval(0.2, 0.7),
-                                ),
-                                child: SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(0, 0.1),
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: _entryController,
-                                          curve: const Interval(0.2, 0.7),
-                                        ),
-                                      ),
-                                  child: _buildCardContainer(cardBg, [
-                                    _buildAutocompleteField(
-                                      controller: _schoolController,
-                                      focusNode: _schoolFocusNode,
-                                      label: "School",
-                                      icon: Icons.school,
-                                      isDark: isDark,
-                                      autoCapitalize: true,
-                                      suggestions: _dynamicSchoolSuggestions,
-                                    ),
-                                    const SizedBox(height: 15),
-                                    _buildAutocompleteField(
-                                      controller: _courseController,
-                                      focusNode: _courseFocusNode,
-                                      label: "Course",
-                                      icon: Icons.book,
-                                      isDark: isDark,
-                                      autoCapitalize: true,
-                                      suggestions: _dynamicCourseSuggestions,
-                                    ),
-                                  ]),
-                                ),
-                              ),
-                              const SizedBox(height: 30),
-                              FadeTransition(
-                                opacity: CurvedAnimation(
-                                  parent: _entryController,
-                                  curve: const Interval(0.3, 0.9),
-                                ),
-                                child: SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(0, 0.05),
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: _entryController,
-                                          curve: const Interval(0.3, 0.9),
-                                        ),
-                                      ),
-                                  child: _buildResumeBox(isDark, cardBg),
-                                ),
-                              ),
-                              const SizedBox(height: 40),
-                              FadeTransition(
-                                opacity: CurvedAnimation(
-                                  parent: _entryController,
-                                  curve: const Interval(0.4, 1.0),
-                                ),
-                                child: SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(0, 0.0),
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: _entryController,
-                                          curve: const Interval(0.4, 1.0),
-                                        ),
-                                      ),
-                                  child: _buildSaveButton(isDark),
-                                ),
-                              ),
-                            ],
+                            child: Column(
+                              children: [
+                                _buildProgressHeader(isDark, progressValue),
+                                _buildProfilePic(),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 30),
+                        FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _entryController,
+                            curve: const Interval(0.1, 0.5),
+                          ),
+                          child: SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.15),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _entryController,
+                                    curve: const Interval(0.1, 0.5),
+                                  ),
+                                ),
+                            child: _buildCardContainer(cardBg, [
+                              _buildTextField(
+                                _usernameController,
+                                "Full Name *",
+                                Icons.person,
+                                isDark,
+                                autoCapitalize: true,
+                              ),
+                              const SizedBox(height: 15),
+                              Row(
+                                children: [
+                                  Expanded(child: _buildGenderDropdown(isDark)),
+                                  const SizedBox(width: 15),
+                                  Expanded(
+                                    child: _buildTextField(
+                                      _hoursController,
+                                      "Req. Hours",
+                                      Icons.timer,
+                                      isDark,
+                                      isNumber: true,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 15),
+                              _buildPhoneField(isDark),
+                              const SizedBox(height: 15),
+                              _buildTextField(
+                                _addressController,
+                                "Address",
+                                Icons.home,
+                                isDark,
+                              ),
+                            ]),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _entryController,
+                            curve: const Interval(0.2, 0.7),
+                          ),
+                          child: SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.1),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _entryController,
+                                    curve: const Interval(0.2, 0.7),
+                                  ),
+                                ),
+                            child: _buildCardContainer(cardBg, [
+                              _buildAutocompleteField(
+                                controller: _schoolController,
+                                focusNode: _schoolFocusNode,
+                                label: "School",
+                                icon: Icons.school,
+                                isDark: isDark,
+                                autoCapitalize: true,
+                                suggestions: _dynamicSchoolSuggestions,
+                              ),
+                              const SizedBox(height: 15),
+                              _buildAutocompleteField(
+                                controller: _courseController,
+                                focusNode: _courseFocusNode,
+                                label: "Course",
+                                icon: Icons.book,
+                                isDark: isDark,
+                                autoCapitalize: true,
+                                suggestions: _dynamicCourseSuggestions,
+                              ),
+                            ]),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                        FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _entryController,
+                            curve: const Interval(0.3, 0.9),
+                          ),
+                          child: SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.05),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _entryController,
+                                    curve: const Interval(0.3, 0.9),
+                                  ),
+                                ),
+                            child: _buildResumeBox(isDark, cardBg),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _entryController,
+                            curve: const Interval(0.4, 1.0),
+                          ),
+                          child: SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.0),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _entryController,
+                                    curve: const Interval(0.4, 1.0),
+                                  ),
+                                ),
+                            child: _buildSaveButton(isDark),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -938,10 +865,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         height: 120,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: zLogoGold, width: 3),
+          border: Border.all(color: AppTheme.primaryGold, width: 3),
           boxShadow: [
             BoxShadow(
-              color: zLogoGold.withOpacity(0.3),
+              color: AppTheme.primaryGold.withOpacity(0.3),
               blurRadius: 15,
               offset: const Offset(0, 5),
             ),
@@ -949,14 +876,18 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         ),
         child: CircleAvatar(
           radius: 58,
-          backgroundColor: zLogoGold.withOpacity(0.1),
+          backgroundColor: AppTheme.primaryGold.withOpacity(0.1),
           backgroundImage: _selectedPhotoBytes != null
               ? MemoryImage(_selectedPhotoBytes!)
               : (_uploadedPhotoUrl != null
                     ? NetworkImage(_uploadedPhotoUrl!)
                     : null),
           child: _selectedPhotoBytes == null && _uploadedPhotoUrl == null
-              ? const Icon(Icons.camera_alt, color: zLogoGold, size: 30)
+              ? const Icon(
+                  Icons.camera_alt,
+                  color: AppTheme.primaryGold,
+                  size: 30,
+                )
               : null,
         ),
       ),
@@ -1009,7 +940,11 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
             fontSize: 13,
           ),
           prefixText: '+63 ',
-          prefixIcon: const Icon(Icons.phone, color: zLogoGold, size: 20),
+          prefixIcon: const Icon(
+            Icons.phone,
+            color: AppTheme.primaryGold,
+            size: 20,
+          ),
           hintText: '9123456789',
           filled: true,
           fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
@@ -1019,7 +954,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: zLogoGold, width: 1.5),
+            borderSide: const BorderSide(
+              color: AppTheme.primaryGold,
+              width: 1.5,
+            ),
           ),
         ),
         onChanged: (value) {
@@ -1065,7 +1003,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
             color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
             fontSize: 13,
           ),
-          prefixIcon: Icon(icon, color: zLogoGold, size: 20),
+          prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
           filled: true,
           fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
           enabledBorder: OutlineInputBorder(
@@ -1074,7 +1012,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: zLogoGold, width: 1.5),
+            borderSide: const BorderSide(
+              color: AppTheme.primaryGold,
+              width: 1.5,
+            ),
           ),
         ),
       ),
@@ -1133,7 +1074,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                     color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                     fontSize: 13,
                   ),
-                  prefixIcon: Icon(icon, color: zLogoGold, size: 20),
+                  prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
                   filled: true,
                   fillColor: isDark
                       ? const Color(0x1A000000)
@@ -1144,7 +1085,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: zLogoGold, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: AppTheme.primaryGold,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               );
@@ -1224,7 +1168,11 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.description, color: zLogoGold, size: 20),
+              const Icon(
+                Icons.description,
+                color: AppTheme.primaryGold,
+                size: 20,
+              ),
               const SizedBox(width: 10),
               const Text(
                 'Resume',
@@ -1238,13 +1186,19 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
-                color: zLogoGold.withOpacity(0.1),
+                color: AppTheme.primaryGold.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: zLogoGold.withOpacity(0.3)),
+                border: Border.all(
+                  color: AppTheme.primaryGold.withOpacity(0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle, color: zLogoGold, size: 20),
+                  const Icon(
+                    Icons.check_circle,
+                    color: AppTheme.primaryGold,
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1252,13 +1206,16 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                           ? 'Local PDF Selected'
                           : 'Resume Uploaded',
                       style: const TextStyle(
-                        color: zLogoGold,
+                        color: AppTheme.primaryGold,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.visibility, color: zLogoGold),
+                    icon: const Icon(
+                      Icons.visibility,
+                      color: AppTheme.primaryGold,
+                    ),
                     onPressed: _handlePdfPreview,
                   ),
                 ],
@@ -1284,7 +1241,11 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.upload_file, color: zLogoGold, size: 24),
+                        Icon(
+                          Icons.upload_file,
+                          color: AppTheme.primaryGold,
+                          size: 24,
+                        ),
                         SizedBox(height: 5),
                         Text(
                           'Upload Resume',
@@ -1302,7 +1263,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   }
 
   Widget _buildSaveButton(bool isDark) {
-    Color btnColor = isDark ? zLogoGold : zOnyxBlack;
+    Color btnColor = isDark ? AppTheme.primaryGold : AppTheme.primaryDark;
     final bool isButtonDisabled = !_isFormValid() || _isLoading;
 
     return Container(
@@ -1319,109 +1280,14 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
             ),
         ],
       ),
-      child: ElevatedButton(
+      child: CustomButton(
+        text: 'SAVE PROFILE',
         onPressed: isButtonDisabled ? null : _saveProfile,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: btnColor,
-          disabledBackgroundColor: Colors.grey.shade400,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Text(
-                'FINALIZE PROFILE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  fontSize: 15,
-                ),
-              ),
+        variant: ButtonVariant.primary,
+        size: ButtonSize.medium,
+        isLoading: _isLoading,
+        isFullWidth: true,
       ),
     );
   }
-}
-
-class MeshGradientPainter extends CustomPainter {
-  final double animationValue;
-  final bool isDark;
-
-  MeshGradientPainter({required this.animationValue, required this.isDark});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Color color1 = isDark
-        ? const Color(0xFFCC5500).withOpacity(0.6)
-        : const Color(0xFFFFDAB9).withOpacity(0.8);
-    final Color color2 = isDark
-        ? const Color(0xFFC2A984).withOpacity(0.5)
-        : const Color(0xFFEADDCA).withOpacity(0.7);
-
-    final double w = size.width;
-    final double h = size.height;
-
-    final double x1 =
-        w * 0.5 + math.sin(animationValue * math.pi * 2) * w * 0.3;
-    final double y1 =
-        h * 0.2 + math.cos(animationValue * math.pi * 2) * h * 0.2;
-    final double x2 =
-        w * 0.8 + math.cos(animationValue * math.pi * 2 * 1.5) * w * 0.2;
-    final double y2 =
-        h * 0.7 + math.sin(animationValue * math.pi * 2 * 1.5) * h * 0.2;
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
-      Paint()
-        ..color = isDark ? const Color(0xFF141619) : const Color(0xFFF8F9FA),
-    );
-
-    final Paint paint1 = Paint()
-      ..shader = RadialGradient(
-        colors: [color1, color1.withOpacity(0.0)],
-        stops: const [0.2, 1.0],
-      ).createShader(Rect.fromCircle(center: Offset(x1, y1), radius: w * 0.8))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 100);
-
-    final Paint paint2 = Paint()
-      ..shader = RadialGradient(
-        colors: [color2, color2.withOpacity(0.0)],
-        stops: const [0.2, 1.0],
-      ).createShader(Rect.fromCircle(center: Offset(x2, y2), radius: w * 0.7))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 100);
-
-    canvas.drawCircle(Offset(x1, y1), w * 0.8, paint1);
-    canvas.drawCircle(Offset(x2, y2), w * 0.7, paint2);
-
-    final Paint arcPaint = Paint()
-      ..color = isDark
-          ? Colors.white.withOpacity(0.03)
-          : Colors.black.withOpacity(0.02)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawArc(
-      Rect.fromCenter(
-        center: Offset(w * 0.5, h * 0.5),
-        width: w * 1.5,
-        height: w * 1.5,
-      ),
-      0,
-      math.pi * 1.5,
-      false,
-      arcPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant MeshGradientPainter oldDelegate) => true;
 }
