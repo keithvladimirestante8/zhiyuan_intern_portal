@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import '../../main.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/animated_theme_switcher.dart';
 import '../../theme/app_theme.dart';
 
@@ -114,10 +115,14 @@ class UIPreferenceManager {
     final animationsEnabled = await getAnimationsEnabled();
     final batteryMode = await getBatteryModeEnabled();
     
-    if (animationsEnabled) {
-      return 'Rich UI Mode (Animations On)';
+    if (batteryMode) {
+      return 'Battery Saver Mode';
     } else {
-      return 'Battery Saver Mode (Animations Off)';
+      if (animationsEnabled) {
+        return 'Rich UI Mode';
+      } else {
+        return 'Performance Mode';
+      }
     }
   }
   
@@ -178,6 +183,7 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
   bool _batteryModeEnabled = true;
   bool _isDarkMode = false;
   bool _isLoading = true;
+  String _currentMode = 'Loading...';
 
   @override
   void initState() {
@@ -189,24 +195,32 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
     final animations = await UIPreferenceManager.getAnimationsEnabled();
     final batteryMode = await UIPreferenceManager.getBatteryModeEnabled();
     final darkMode = await UIPreferenceManager.getThemeMode();
+    final currentMode = await UIPreferenceManager.getCurrentUIMode();
     
     setState(() {
       _animationsEnabled = animations;
       _batteryModeEnabled = batteryMode;
       _isDarkMode = darkMode;
+      _currentMode = currentMode;
       _isLoading = false;
     });
   }
 
   Future<void> _toggleAnimations(bool value) async {
+    await UIPreferenceManager.setAnimationsEnabled(value);
+    final currentMode = await UIPreferenceManager.getCurrentUIMode();
     setState(() {
       _animationsEnabled = value;
+      _currentMode = currentMode;
     });
   }
 
   Future<void> _toggleBatteryMode(bool value) async {
+    await UIPreferenceManager.setBatteryModeEnabled(value);
+    final currentMode = await UIPreferenceManager.getCurrentUIMode();
     setState(() {
       _batteryModeEnabled = value;
+      _currentMode = currentMode;
     });
   }
   
@@ -230,29 +244,15 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
           _isLoading = false;
         });
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              value ? 'Dark mode enabled.' : 'Light mode enabled.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: value ? Colors.grey.shade800 : Colors.blue.shade100,
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppSnackbar.info(
+          context,
+          value ? 'Dark mode enabled.' : 'Light mode enabled.',
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Error updating preferences',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackbar.error(context, 'Update failed.');
       }
     }
   }
@@ -271,8 +271,12 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
           title: const Text('Rich Animations'),
           subtitle: Text(
             _animationsEnabled 
-                ? 'Beautiful animations enabled (uses more battery)'
-                : 'Animations disabled for battery saving',
+                ? 'Animations enabled'
+                : 'Animations disabled',
+            style: TextStyle(
+              fontSize: 12,
+              color: _isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+            ),
           ),
           leading: Icon(
             _animationsEnabled ? Icons.animation : Icons.battery_saver,
@@ -298,8 +302,12 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
           title: const Text('Dark Mode'),
           subtitle: Text(
             _isDarkMode 
-                ? 'Dark theme enabled for reduced eye strain'
-                : 'Light theme enabled for better visibility',
+                ? 'Dark theme enabled'
+                : 'Light theme enabled',
+            style: TextStyle(
+              fontSize: 12,
+              color: _isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+            ),
           ),
           leading: Icon(
             _isDarkMode ? Icons.dark_mode : Icons.light_mode,
@@ -325,8 +333,12 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
           title: const Text('Battery Saver Mode'),
           subtitle: Text(
             _batteryModeEnabled 
-                ? 'Maximum battery efficiency enabled'
-                : 'Standard performance mode',
+                ? 'Battery saver enabled'
+                : 'Performance mode',
+            style: TextStyle(
+              fontSize: 12,
+              color: _isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+            ),
           ),
           leading: Icon(
             _batteryModeEnabled ? Icons.battery_charging_full : Icons.power,
@@ -369,16 +381,11 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
                       'Current Mode',
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
-                    FutureBuilder<String>(
-                      future: UIPreferenceManager.getCurrentUIMode(),
-                      builder: (context, snapshot) {
-                        return Text(
-                          snapshot.data ?? 'Loading...',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      },
+                    Text(
+                      _currentMode,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),

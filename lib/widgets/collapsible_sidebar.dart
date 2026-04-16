@@ -149,26 +149,37 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: Container(
-              padding: const EdgeInsets.all(32.0),
+              padding: EdgeInsets.all(32.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.15),
+                      gradient: LinearGradient(
+                        colors: [Colors.redAccent, Colors.red.shade700],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.redAccent.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 32),
+                    child: const Icon(Icons.logout_rounded, color: Colors.white, size: 32),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    "Secure Logout",
+                    "Logout",
                     style: TextStyle(
                       color: widget.isDark ? Colors.white : AppTheme.primaryDark,
                       fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -188,7 +199,7 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
                         child: OutlinedButton(
                           onPressed: () => Navigator.of(dialogContext).pop(),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: EdgeInsets.symmetric(vertical: 16),
                             side: BorderSide(
                               color: widget.isDark ? Colors.grey.shade800 : Colors.grey.shade300,
                               width: 1.5,
@@ -207,26 +218,43 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(dialogContext).pop();
-                            if (widget.isMobile) Navigator.pop(context);
-                            FirebaseAuth.instance.signOut().then(
-                                  (_) => Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                                    (route) => false,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            gradient: LinearGradient(
+                              colors: [Colors.redAccent, Colors.red.shade700],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.redAccent.withOpacity(0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
                               ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.redAccent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            elevation: 0,
+                            ],
                           ),
-                          child: const Text("Logout", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                              if (widget.isMobile) Navigator.pop(context);
+                              FirebaseAuth.instance.signOut().then(
+                                    (_) => Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                                      (route) => false,
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 0,
+                            ),
+                            child: const Text("Logout", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                          ),
                         ),
                       ),
                     ],
@@ -394,7 +422,7 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
     return FadeTransition(
       opacity: _fadeAnimation,
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           color: cardBg,
@@ -438,7 +466,7 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
             ),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(
                 color: AppTheme.primaryGold.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(16),
@@ -605,11 +633,24 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
         if (_isExpanded)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(4),
+            padding: EdgeInsets.all(4),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.redAccent, width: 1.5),
-              color: widget.isDark ? Colors.black26 : Colors.red.shade50,
+              border: Border.all(color: Colors.redAccent.withOpacity(0.3), width: 1),
+              gradient: LinearGradient(
+                colors: widget.isDark
+                    ? [Colors.redAccent.withOpacity(0.1), Colors.redAccent.withOpacity(0.05)]
+                    : [Colors.red.shade50, Colors.red.shade100.withOpacity(0.3)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.redAccent.withOpacity(0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Material(
               color: Colors.transparent,
@@ -617,31 +658,41 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
                 borderRadius: BorderRadius.circular(14),
                 onTap: () => _showLogoutConfirmation(context),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                   child: Row(
                     children: [
                       Container(
-                        width: 36,
-                        height: 36,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: widget.isDark ? Colors.grey.shade800 : Colors.red.shade100,
-                          border: Border.all(color: Colors.redAccent, width: 1.5),
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            colors: [Colors.redAccent, Colors.red.shade700],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.redAccent.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 18),
+                        child: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
                       ),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                      const SizedBox(width: 14),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Secure Logout",
-                              style: TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                              "Logout",
+                              style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.3),
                             ),
                             Text(
-                              "Sign out safely",
-                              style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w500),
+                              "End session securely",
+                              style: TextStyle(color: Colors.redAccent.withOpacity(0.7), fontSize: 11, fontWeight: FontWeight.w500),
                             ),
                           ],
                         ),
@@ -660,15 +711,25 @@ class _CollapsibleSidebarState extends State<CollapsibleSidebar>
               height: 40,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: widget.isDark ? Colors.grey.shade800 : Colors.red.shade100,
-                border: Border.all(color: Colors.redAccent, width: 1.5),
+                gradient: LinearGradient(
+                  colors: [Colors.redAccent, Colors.red.shade700],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => _showLogoutConfirmation(context),
-                  child: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+                  child: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
                 ),
               ),
             ),

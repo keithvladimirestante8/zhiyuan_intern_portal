@@ -7,6 +7,7 @@ import '../../core/utils/ui_preference_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
 import '../../core/services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/animated_theme_switcher.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/glass_card.dart';
@@ -67,31 +68,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await AppConstants.updateFromUserPreferences();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Changes saved.',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppTheme.primaryGold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+        AppSnackbar.show(
+          context: context,
+          message: 'Saved.',
+          type: SnackbarType.custom,
+          customColor: AppTheme.primaryGold,
+          title: 'Success',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to save changes: ${e.toString().replaceAll('Exception:', '').trim()}',
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackbar.error(context, 'Save failed.');
       }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -109,13 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
         if (!success) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Authentication failed.'),
-                backgroundColor: Colors.red,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            AppSnackbar.error(context, 'Authentication failed.');
           }
           setState(() => _isProcessing = false);
           return;
@@ -323,7 +304,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title,
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : const Color(0xFF1A232E),
                       ),
                     ),

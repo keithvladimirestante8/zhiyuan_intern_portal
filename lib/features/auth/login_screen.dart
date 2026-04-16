@@ -19,6 +19,7 @@ import 'register_screen.dart';
 import '../../core/services/auth_service.dart';
 import '../profile/setup_profile_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/custom_button.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -51,21 +52,6 @@ class _LoginScreenState extends State<LoginScreen>
   String? _currentDeviceId;
   String? _lastLoggedInUserId;
   Map<String, dynamic>? _deviceSecurityProfile;
-
-  void _showSnackBar(String message, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
 
   Future<String> _getDeviceId() async {
     try {
@@ -201,10 +187,7 @@ class _LoginScreenState extends State<LoginScreen>
       final credentials = await _authService.getSecureCredentials();
 
       if (credentials == null) {
-        _showSnackBar(
-          'Security vault empty. Please login manually once.',
-          Colors.orange,
-        );
+        AppSnackbar.warning(context, 'No saved credentials.');
         setState(() => _isLoading = false);
         return;
       }
@@ -228,17 +211,14 @@ class _LoginScreenState extends State<LoginScreen>
           await prefs.setString('last_logged_in_user_id', currentUserId);
 
           await _logSecurityEvent('biometric_login_success', currentUserId);
-          _showSnackBar('Biometric authentication successful!', Colors.green);
+          AppSnackbar.success(context, 'Login successful.');
           await _navigateToUserScreen(userCredential.user!);
         }
       } else {
-        _showSnackBar('Biometric authentication cancelled', Colors.orange);
+        AppSnackbar.warning(context, 'Cancelled.');
       }
     } catch (e) {
-      _showSnackBar(
-        'Authentication failed. Please use your password.',
-        Colors.red,
-      );
+      AppSnackbar.error(context, 'Authentication failed.');
       await _logSecurityEvent('biometric_error', 'error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -273,16 +253,31 @@ class _LoginScreenState extends State<LoginScreen>
 
         switch (role) {
           case 'cao':
-            _showSnackBar(
-              'Welcome, Chief Admin Officer.',
-              AppTheme.primaryGold,
+            AppSnackbar.show(
+              context: context,
+              message: 'Welcome, CAO.',
+              type: SnackbarType.custom,
+              customColor: AppTheme.primaryGold,
+              title: 'Welcome',
             );
             break;
           case 'hr':
-            _showSnackBar('Welcome, HR Admin.', Colors.blueAccent);
+            AppSnackbar.show(
+              context: context,
+              message: 'Welcome, HR.',
+              type: SnackbarType.custom,
+              customColor: Colors.blueAccent,
+              title: 'Welcome',
+            );
             break;
           case 'leader':
-            _showSnackBar('Welcome, Department Leader.', Colors.purpleAccent);
+            AppSnackbar.show(
+              context: context,
+              message: 'Welcome, Leader.',
+              type: SnackbarType.custom,
+              customColor: Colors.purpleAccent,
+              title: 'Welcome',
+            );
             break;
           case 'intern':
           default:
@@ -307,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen>
         await _fallbackToLegacyInternCheck(user.uid);
       }
     } catch (e) {
-      _showSnackBar('Error loading user profile', Colors.red);
+      AppSnackbar.error(context, 'Profile error.');
     }
   }
 
@@ -377,16 +372,16 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _forgotPassword() async {
     HapticFeedback.lightImpact();
     if (_emailController.text.isEmpty) {
-      _showSnackBar('Please enter your email.', Colors.orange);
+      AppSnackbar.warning(context, 'Email required.');
       return;
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(
         email: _emailController.text.trim(),
       );
-      _showSnackBar('Reset link sent to your email.', Colors.green);
+      AppSnackbar.success(context, 'Reset link sent.');
     } catch (e) {
-      _showSnackBar(e.toString(), Colors.redAccent);
+      AppSnackbar.error(context, e.toString());
     }
   }
 
@@ -396,12 +391,12 @@ class _LoginScreenState extends State<LoginScreen>
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _showSnackBar('Please enter both email and password.', Colors.redAccent);
+      AppSnackbar.error(context, 'Email and password required.');
       return;
     }
 
     if (_isAccountLocked) {
-      _showSnackBar('Account temporarily locked.', Colors.red);
+      AppSnackbar.error(context, 'Account locked.');
       return;
     }
 
@@ -441,12 +436,12 @@ class _LoginScreenState extends State<LoginScreen>
       _failedAttempts++;
       if (_failedAttempts >= 3) {
         setState(() => _isAccountLocked = true);
-        _showSnackBar('Account locked for 15 minutes.', Colors.red);
+        AppSnackbar.error(context, 'Account locked. Try again in 15 minutes.');
         Timer(const Duration(minutes: 15), () {
           if (mounted) setState(() => _isAccountLocked = false);
         });
       } else {
-        _showSnackBar(e.message ?? 'Auth Error', Colors.redAccent);
+        AppSnackbar.error(context, e.message ?? 'Authentication error.');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -471,10 +466,7 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } else {
-      _showSnackBar(
-        'Account record not found in the system.',
-        Colors.redAccent,
-      );
+      AppSnackbar.error(context, 'Account not found.');
     }
   }
 
@@ -664,14 +656,14 @@ class _LoginScreenState extends State<LoginScreen>
                               const SizedBox(height: 40),
                               _buildTextField(
                                 _emailController,
-                                'Corporate Email',
-                                Icons.alternate_email_rounded,
+                                'Email',
+                                Icons.email_outlined,
                                 isDark,
                               ),
                               const SizedBox(height: 20),
                               _buildTextField(
                                 _passwordController,
-                                'Access Password',
+                                'Password',
                                 Icons.lock_outline_rounded,
                                 isDark,
                                 isPassword: true,
@@ -753,7 +745,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ],
                                 ),
                                 child: CustomButton(
-                                  text: 'SECURE LOGIN',
+                                  text: 'Login',
                                   onPressed: _isLoading ? null : _loginUser,
                                   variant: ButtonVariant.primary,
                                   size: ButtonSize.medium,
@@ -777,7 +769,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   ),
                                   child: CustomButton(
-                                    text: 'LOGIN WITH BIOMETRICS',
+                                    text: 'Biometric Login',
                                     onPressed: _isLoading
                                         ? null
                                         : _authenticateWithBiometrics,

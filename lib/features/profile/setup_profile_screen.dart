@@ -19,6 +19,7 @@ import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/custom_button.dart';
 
 class SetupProfileScreen extends StatefulWidget {
@@ -366,10 +367,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
       final isLargeFile = _selectedResumeBytes!.length > fileSizeLimit;
 
       if (isLargeFile) {
-        _showSnackbar(
-          "File too large for preview. Please use a smaller PDF.",
-          Colors.orange,
-        );
+        AppSnackbar.warning(context, 'File too large.');
         return;
       }
 
@@ -412,10 +410,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                         canShowScrollStatus: true,
                         onDocumentLoadFailed: (details) {
                           Navigator.pop(context);
-                          _showSnackbar(
-                            "Failed to load PDF. Try a different file.",
-                            Colors.red,
-                          );
+                          AppSnackbar.error(context, 'PDF load failed.');
                         },
                       ),
                     ),
@@ -426,7 +421,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
           ),
         );
       } catch (e) {
-        _showSnackbar("Unable to preview this PDF file.", Colors.red);
+        AppSnackbar.error(context, 'Preview failed.');
       }
     } else if (_uploadedResumeUrl != null) {
       try {
@@ -434,10 +429,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         if (await canLaunchUrl(url)) {
           await launchUrl(url, mode: LaunchMode.externalApplication);
         } else {
-          _showSnackbar("Cannot open resume URL", Colors.red);
+          AppSnackbar.error(context, 'Cannot open URL.');
         }
       } catch (e) {
-        _showSnackbar("Failed to open resume", Colors.red);
+        AppSnackbar.error(context, 'Open failed.');
       }
     }
   }
@@ -552,26 +547,15 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
         );
       }
     } on SocketException {
-      _showSnackbar("No internet connection", Colors.redAccent);
+      AppSnackbar.error(context, 'No internet.');
     } on TimeoutException {
-      _showSnackbar("Connection timeout. Please try again.", Colors.redAccent);
+      AppSnackbar.error(context, 'Connection timeout.');
     } catch (e) {
       debugPrint("UPLOAD ERROR: $e");
-      _showSnackbar("Error: ${e.toString()}", Colors.redAccent);
+      AppSnackbar.error(context, 'Upload failed.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showSnackbar(String msg, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: color,
-        content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
   }
 
   double _calculateProgress() {

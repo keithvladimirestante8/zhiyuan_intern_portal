@@ -7,15 +7,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../widgets/collapsible_sidebar.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ui_preference_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
-import '../settings/settings_screen.dart';
-import '../profile/setup_profile_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/animated_theme_switcher.dart';
+import '../../widgets/collapsible_sidebar.dart';
 import '../../widgets/custom_button.dart';
+import '../profile/setup_profile_screen.dart';
+import '../settings/settings_screen.dart';
+import 'attendance_history_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -42,6 +44,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? _docId;
   bool _hasTimedIn = false;
   bool _hasTimedOut = false;
+
+  TimeOfDay? _selectedTime;
+  DateTime? _selectedDate;
+  bool _isWFH = true;
+
+  DateTime? _targetCompletionDate;
 
   int _selectedIndex = 0;
 
@@ -100,10 +108,21 @@ class _DashboardScreenState extends State<DashboardScreen>
           .doc(user!.uid)
           .get();
       if (profileDoc.exists) {
+        final targetDateStr = profileDoc.data()?['target_completion_date'];
+        DateTime? targetDate;
+        if (targetDateStr != null && targetDateStr is String) {
+          try {
+            targetDate = DateTime.parse(targetDateStr);
+          } catch (e) {
+            debugPrint("Error parsing target date: $e");
+          }
+        }
+
         setState(() {
           _displayName = profileDoc.data()?['username'] ?? "INTERN";
           _requiredHours = (profileDoc.data()?['required_hours'] ?? 0.0)
               .toDouble();
+          _targetCompletionDate = targetDate;
         });
       }
 
@@ -171,18 +190,333 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _handleDTRAction() async {
     if (user == null) return;
     HapticFeedback.mediumImpact();
+
+    setState(() {
+      _selectedTime = TimeOfDay.now();
+      _selectedDate = DateTime.now();
+      _isWFH = true;
+    });
+
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (!mounted) return;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A232E) : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Colors.white.withOpacity(isDark ? 0.1 : 0.3),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  !_hasTimedIn ? "Time In" : "Time Out",
+                  style: TextStyle(
+                    color: isDark ? Colors.white : const Color(0xFF1A232E),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _displayName,
+                  style: TextStyle(
+                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildTimePickerButton(isDark, setDialogState),
+                const SizedBox(height: 16),
+                _buildDatePickerButton(isDark, setDialogState),
+                const SizedBox(height: 16),
+                _buildWfhToggle(isDark, setDialogState),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          side: BorderSide(
+                            color: isDark
+                                ? Colors.grey.shade700
+                                : Colors.grey.shade300,
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          "Cancel",
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF1A232E),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.primaryGold,
+                              AppTheme.primaryDark,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.primaryGold.withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            "Submit",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (result == true && _selectedTime != null && _selectedDate != null) {
+      await _submitAttendance(isDark);
+    }
+  }
+
+  Widget _buildTimePickerButton(bool isDark, StateSetter setDialogState) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: _selectedTime ?? TimeOfDay.now(),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: ColorScheme.light(primary: AppTheme.primaryGold),
+              ),
+              child: child!,
+            );
+          },
+        );
+        if (picked != null) {
+          setDialogState(() => _selectedTime = picked);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppTheme.primaryGold.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.access_time_rounded,
+              color: AppTheme.primaryGold,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _selectedTime != null
+                  ? "${_selectedTime!.hour > 12 ? _selectedTime!.hour - 12 : (_selectedTime!.hour == 0 ? 12 : _selectedTime!.hour)}:${_selectedTime!.minute.toString().padLeft(2, '0')} ${_selectedTime!.period == DayPeriod.am ? 'AM' : 'PM'}"
+                  : "Select Time",
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF1A232E),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDatePickerButton(bool isDark, StateSetter setDialogState) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: _selectedDate ?? DateTime.now(),
+          firstDate: DateTime(2024),
+          lastDate: DateTime(2027),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: ColorScheme.light(primary: AppTheme.primaryGold),
+              ),
+              child: child!,
+            );
+          },
+        );
+        if (picked != null) {
+          setDialogState(() => _selectedDate = picked);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppTheme.primaryGold.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_rounded,
+              color: AppTheme.primaryGold,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _selectedDate != null
+                  ? "${_selectedDate!.month}/${_selectedDate!.day}/${_selectedDate!.year}"
+                  : "Select Date",
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF1A232E),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWfhToggle(bool isDark, StateSetter setDialogState) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryGold.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on_rounded,
+            color: AppTheme.primaryGold,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _isWFH ? "WFH" : "OFFICE",
+            style: TextStyle(
+              color: isDark ? Colors.white : const Color(0xFF1A232E),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          AnimatedThemeSwitcher(
+            isDark: _isWFH,
+            onChanged: (value) => setDialogState(() => _isWFH = value),
+            size: 32.0,
+            activeIcon: Icons.home_rounded,
+            inactiveIcon: Icons.business_rounded,
+            activeColor: AppTheme.primaryGold,
+            inactiveColor: Colors.grey,
+            activeTrackColor: AppTheme.primaryGold.withOpacity(0.3),
+            inactiveTrackColor: Colors.grey.withOpacity(0.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitAttendance(bool isDark) async {
+    if (user == null || _selectedTime == null || _selectedDate == null) return;
     setState(() => _isLoading = true);
-    String todayDate =
-        "${_currentTime.year}-${_currentTime.month.toString().padLeft(2, '0')}-${_currentTime.day.toString().padLeft(2, '0')}";
+
+    String selectedDateStr =
+        "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}";
+
+    DateTime timeDateTime = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
+    );
+
     final collection = FirebaseFirestore.instance.collection('attendance');
 
     try {
       if (!_hasTimedIn) {
         final newDoc = await collection.add({
           'email': user!.email,
-          'date': todayDate,
-          'timeIn': FieldValue.serverTimestamp(),
+          'date': selectedDateStr,
+          'timeIn': Timestamp.fromDate(timeDateTime),
           'timeOut': null,
+          'location': _isWFH ? 'WFH' : 'Office',
           'status': 'Active',
         });
         setState(() {
@@ -192,7 +526,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         _showSnackbar("Time-In Recorded Successfully!", Colors.green);
       } else if (_hasTimedIn && !_hasTimedOut) {
         await collection.doc(_docId).update({
-          'timeOut': FieldValue.serverTimestamp(),
+          'timeOut': Timestamp.fromDate(timeDateTime),
+          'location': _isWFH ? 'WFH' : 'Office',
           'status': 'Completed',
         });
         setState(() => _hasTimedOut = true);
@@ -302,16 +637,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       case 1:
         return const SetupProfileScreen();
       case 2:
-        return Center(
-          child: Text(
-            "Attendance History Phase 4 Module",
-            style: TextStyle(
-              color: textColor,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        );
+        return const AttendanceHistoryScreen();
       case 3:
         return const SettingsScreen();
       default:
@@ -446,6 +772,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           textColor,
                           clampedProgress,
                         ),
+                        const SizedBox(height: 20),
+                        _buildAIInsightsCard(cardBg, isDark, textColor),
                       ],
                     ),
                   ),
@@ -493,6 +821,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
                 const SizedBox(height: 15),
                 _buildProgressCard(cardBg, isDark, textColor, clampedProgress),
+                const SizedBox(height: 15),
+                _buildAIInsightsCard(cardBg, isDark, textColor),
                 const SizedBox(height: 15),
                 _buildTimeInCard(cardBg, isDark, textColor),
               ],
@@ -712,10 +1042,6 @@ class _DashboardScreenState extends State<DashboardScreen>
               ? (isDark ? Colors.grey.shade800 : Colors.grey.shade300)
               : const Color(0xFFE53935));
 
-    Color btnTxtColor = !_hasTimedIn
-        ? Colors.black
-        : (_hasTimedOut ? Colors.grey : Colors.white);
-
     return _buildGlassCard(
       cardBg: cardBg,
       isDark: isDark,
@@ -794,6 +1120,563 @@ class _DashboardScreenState extends State<DashboardScreen>
               size: ButtonSize.small,
               isLoading: _isLoading,
               isFullWidth: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, dynamic> _calculateAIInsights() {
+    double remainingHours = _requiredHours - _hoursRendered;
+    double progress = _requiredHours > 0
+        ? (_hoursRendered / _requiredHours) * 100
+        : 0;
+
+    double avgHoursPerShift = _shiftsDone > 0
+        ? (_hoursRendered / _shiftsDone)
+        : 8.0;
+
+    int remainingShifts = avgHoursPerShift > 0
+        ? (remainingHours / avgHoursPerShift).ceil()
+        : 0;
+    DateTime estimatedDate = DateTime.now().add(
+      Duration(days: (remainingShifts / 5).ceil() * 7),
+    );
+
+    double requiredHoursPerShift = 0;
+    String suggestion = "";
+    String status = "";
+
+    if (_targetCompletionDate != null) {
+      int daysRemaining = _targetCompletionDate!
+          .difference(DateTime.now())
+          .inDays;
+      if (daysRemaining > 0) {
+        int workingDaysLeft = (daysRemaining / 7 * 5).ceil();
+        remainingShifts = workingDaysLeft;
+
+        requiredHoursPerShift = workingDaysLeft > 0
+            ? (remainingHours / workingDaysLeft)
+            : 0;
+
+        int shiftsNeededAt8Hours = (remainingHours / 8).ceil();
+        int daysNeededAt8Hours = (shiftsNeededAt8Hours / 5).ceil() * 7;
+        DateTime realisticTargetDate = DateTime.now().add(
+          Duration(days: daysNeededAt8Hours),
+        );
+
+        if (requiredHoursPerShift <= 8) {
+          suggestion =
+              "Perfect! You need ${requiredHoursPerShift.toStringAsFixed(1)} hours/shift to meet your target.";
+          status = "On Track";
+        } else if (requiredHoursPerShift <= 10) {
+          suggestion =
+              "Need ${requiredHoursPerShift.toStringAsFixed(1)} hours/shift. Try working longer shifts.";
+          status = "Needs Effort";
+        } else if (requiredHoursPerShift <= 12) {
+          suggestion =
+              "Requires ${requiredHoursPerShift.toStringAsFixed(1)} hours/shift. Consider extending to ${realisticTargetDate.month}/${realisticTargetDate.day}/${realisticTargetDate.year}.";
+          status = "Challenging";
+        } else {
+          suggestion =
+              "Not achievable. Extend target to ${realisticTargetDate.month}/${realisticTargetDate.day}/${realisticTargetDate.year} or work more shifts.";
+          status = "Unrealistic";
+        }
+      } else {
+        suggestion = "Your target date has passed. Set a new target.";
+        status = "Overdue";
+      }
+    } else {
+      suggestion = "Set a target completion date to get AI suggestions.";
+      status = "No Target";
+    }
+
+    return {
+      'remainingHours': remainingHours,
+      'progress': progress,
+      'avgHoursPerShift': avgHoursPerShift,
+      'estimatedDate': estimatedDate,
+      'requiredDailyHours': requiredHoursPerShift,
+      'suggestion': suggestion,
+      'status': status,
+      'remainingShifts': remainingShifts,
+    };
+  }
+
+  Future<void> _setTargetCompletionDate() async {
+    if (user == null) return;
+    HapticFeedback.mediumImpact();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate:
+          _targetCompletionDate ?? DateTime.now().add(const Duration(days: 90)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2027),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(primary: AppTheme.primaryGold),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('intern_profiles')
+            .doc(user!.uid)
+            .update({'target_completion_date': picked.toIso8601String()});
+
+        setState(() => _targetCompletionDate = picked);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green,
+              content: Text(
+                "Target date set to ${picked.month}/${picked.day}/${picked.year}",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint("Error setting target date: $e");
+      }
+    }
+  }
+
+  Widget _buildAIInsightsCard(Color cardBg, bool isDark, Color textColor) {
+    final insights = _calculateAIInsights();
+
+    return _buildGlassCard(
+      cardBg: cardBg,
+      isDark: isDark,
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.primaryGold, AppTheme.primaryDark],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryGold.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI INSIGHTS',
+                      style: TextStyle(
+                        color: isDark
+                            ? Colors.grey.shade400
+                            : Colors.grey.shade600,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Smart Completion Tracker',
+                      style: TextStyle(
+                        color: isDark
+                            ? Colors.grey.shade500
+                            : Colors.grey.shade500,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: insights['status'] == 'On Track'
+                      ? Colors.green.withOpacity(0.15)
+                      : insights['status'] == 'Needs Effort'
+                      ? AppTheme.primaryGold.withOpacity(0.15)
+                      : insights['status'] == 'Challenging'
+                      ? Colors.orange.withOpacity(0.15)
+                      : Colors.red.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: insights['status'] == 'On Track'
+                        ? Colors.green.withOpacity(0.3)
+                        : insights['status'] == 'Needs Effort'
+                        ? AppTheme.primaryGold.withOpacity(0.3)
+                        : insights['status'] == 'Challenging'
+                        ? Colors.orange.withOpacity(0.3)
+                        : Colors.red.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  insights['status'],
+                  style: TextStyle(
+                    color: insights['status'] == 'On Track'
+                        ? Colors.green
+                        : insights['status'] == 'Needs Effort'
+                        ? AppTheme.primaryGold
+                        : insights['status'] == 'Challenging'
+                        ? Colors.orange
+                        : isDark
+                        ? Colors.white
+                        : Colors.red,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.grey.shade800.withOpacity(0.5)
+                  : Colors.grey.shade100.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppTheme.primaryGold.withOpacity(0.15),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Overall Progress',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.grey.shade400
+                                : Colors.grey.shade600,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${insights['progress'].toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: AppTheme.primaryGold,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGold.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '${insights['remainingHours'].toStringAsFixed(0)}',
+                            style: TextStyle(
+                              color: AppTheme.primaryGold,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            'Hours Left',
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.grey.shade400
+                                  : Colors.grey.shade600,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: insights['progress'] / 100,
+                    backgroundColor: Colors.grey.withOpacity(
+                      isDark ? 0.15 : 0.2,
+                    ),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppTheme.primaryGold,
+                    ),
+                    minHeight: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          InkWell(
+            onTap: _setTargetCompletionDate,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.grey.shade800.withOpacity(0.5)
+                    : Colors.grey.shade100.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppTheme.primaryGold.withOpacity(0.15),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGold.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.event_rounded,
+                      color: AppTheme.primaryGold,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Target Completion Date',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.grey.shade400
+                                : Colors.grey.shade600,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _targetCompletionDate != null
+                              ? "${_targetCompletionDate!.month}/${_targetCompletionDate!.day}/${_targetCompletionDate!.year}"
+                              : "Tap to set target date",
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGold.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.edit_rounded,
+                      color: AppTheme.primaryGold.withOpacity(0.8),
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.primaryGold.withOpacity(0.08),
+                  AppTheme.primaryDark.withOpacity(0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppTheme.primaryGold.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryGold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.psychology_rounded,
+                    color: AppTheme.primaryGold,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'AI Recommendation',
+                        style: TextStyle(
+                          color: AppTheme.primaryGold,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        insights['suggestion'],
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Row(
+            children: [
+              Expanded(
+                child: _buildAIStat(
+                  'Avg Hours/Shift',
+                  '${insights['avgHoursPerShift'].toStringAsFixed(1)}h',
+                  isDark,
+                  Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildAIStat(
+                  'Shifts Needed',
+                  '${insights['remainingShifts']}',
+                  isDark,
+                  Icons.work_rounded,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIStat(
+    String label,
+    String value,
+    bool isDark, [
+    IconData? icon,
+  ]) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.grey.shade800.withOpacity(0.5)
+            : Colors.grey.shade100.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppTheme.primaryGold.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGold.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: AppTheme.primaryGold, size: 16),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : const Color(0xFF1A232E),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

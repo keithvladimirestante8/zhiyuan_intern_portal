@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/custom_button.dart';
 import '../../core/utils/ultra_battery_saver.dart';
 import '../../core/utils/battery_manager.dart';
@@ -152,20 +153,17 @@ class _RegisterScreenState extends State<RegisterScreen>
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _showSnackbar("Please fill in all fields.", isError: true);
+      AppSnackbar.error(context, 'All fields required.');
       return;
     }
     if (password != _confirmPasswordController.text.trim()) {
       HapticFeedback.vibrate();
-      _showSnackbar("Passwords do not match.", isError: true);
+      AppSnackbar.error(context, 'Passwords mismatch.');
       return;
     }
     if (_strength < 0.75) {
       HapticFeedback.vibrate();
-      _showSnackbar(
-        "Security risk: Please use a stronger password.",
-        isError: true,
-      );
+      AppSnackbar.error(context, 'Weak password.');
       return;
     }
 
@@ -174,10 +172,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     try {
       bool isAuthorized = await _isEmailWhitelisted(email);
       if (!isAuthorized) {
-        _showSnackbar(
-          "ACCESS DENIED: Email not in HR pre-approved list.",
-          isError: true,
-        );
+        AppSnackbar.error(context, 'Access denied.');
         setState(() => _isLoading = false);
         return;
       }
@@ -197,26 +192,15 @@ class _RegisterScreenState extends State<RegisterScreen>
       });
 
       await userCredential.user?.sendEmailVerification();
-      _showSnackbar("Account Initialized! Verification sent.", isError: false);
+      AppSnackbar.success(context, 'Verification sent.');
 
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
-      _showSnackbar(e.message ?? "Authentication Error", isError: true);
+      AppSnackbar.error(context, e.message ?? 'Authentication error.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showSnackbar(String msg, {required bool isError}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: isError ? Colors.redAccent : Colors.green,
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
   }
 
   @override
@@ -371,14 +355,14 @@ class _RegisterScreenState extends State<RegisterScreen>
                               const SizedBox(height: 40),
                               _buildField(
                                 _emailController,
-                                "Authorized Email",
+                                "Email",
                                 Icons.email_outlined,
                                 isDark,
                               ),
                               const SizedBox(height: 20),
                               _buildField(
                                 _passwordController,
-                                "Set Access Password",
+                                "Password",
                                 Icons.lock_outline,
                                 isDark,
                                 isPass: true,
@@ -423,7 +407,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                               const SizedBox(height: 20),
                               _buildField(
                                 _confirmPasswordController,
-                                "Confirm Access Password",
+                                "Confirm Password",
                                 Icons.lock_reset,
                                 isDark,
                                 isPass: true,
@@ -519,7 +503,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         ],
       ),
       child: CustomButton(
-        text: 'INITIALIZE ACCOUNT',
+        text: 'Register',
         onPressed: _isLoading ? null : _handleRegistration,
         variant: ButtonVariant.primary,
         size: ButtonSize.medium,
