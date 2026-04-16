@@ -8,12 +8,24 @@ class AnimatedThemeSwitcher extends StatefulWidget {
   final bool isDark;
   final ValueChanged<bool> onChanged;
   final double size;
+  final IconData activeIcon;
+  final IconData inactiveIcon;
+  final Color activeColor;
+  final Color inactiveColor;
+  final Color? activeTrackColor;
+  final Color? inactiveTrackColor;
 
   const AnimatedThemeSwitcher({
     super.key,
     required this.isDark,
     required this.onChanged,
     this.size = 24.0,
+    required this.activeIcon,
+    required this.inactiveIcon,
+    required this.activeColor,
+    required this.inactiveColor,
+    this.activeTrackColor,
+    this.inactiveTrackColor,
   });
 
   @override
@@ -42,8 +54,8 @@ class _AnimatedThemeSwitcherState extends State<AnimatedThemeSwitcher>
 
     _colorAnimation =
         ColorTween(
-          begin: AppTheme.primaryGold,
-          end: AppTheme.primaryDark,
+          begin: widget.inactiveColor,
+          end: widget.activeColor,
         ).animate(
           CurvedAnimation(
             parent: _animationController,
@@ -60,8 +72,8 @@ class _AnimatedThemeSwitcherState extends State<AnimatedThemeSwitcher>
 
     _bgColorAnimation =
         ColorTween(
-          begin: AppTheme.mainThemeBgLight,
-          end: AppTheme.mainThemeBgDark,
+          begin: widget.inactiveTrackColor ?? widget.inactiveColor.withOpacity(0.3),
+          end: widget.activeTrackColor ?? widget.activeColor.withOpacity(0.3),
         ).animate(
           CurvedAnimation(
             parent: _animationController,
@@ -99,9 +111,9 @@ class _AnimatedThemeSwitcherState extends State<AnimatedThemeSwitcher>
               4; // Light mode: flush to left edge
 
         final Color currentColor =
-            _colorAnimation.value ?? AppTheme.primaryGold;
+            _colorAnimation.value ?? widget.inactiveColor;
         final Color currentBgColor =
-            _bgColorAnimation.value ?? AppTheme.mainThemeBgLight;
+            _bgColorAnimation.value ?? (widget.inactiveTrackColor ?? widget.inactiveColor.withOpacity(0.3));
 
         return GestureDetector(
           onTap: () {
@@ -243,8 +255,8 @@ class _AnimatedThemeSwitcherState extends State<AnimatedThemeSwitcher>
                           Center(
                             child: Icon(
                               widget.isDark
-                                  ? Icons.nightlight_round
-                                  : Icons.wb_sunny_rounded,
+                                  ? widget.activeIcon
+                                  : widget.inactiveIcon,
                               size: widget.size * 0.35,
                               color: currentColor,
                               shadows: [

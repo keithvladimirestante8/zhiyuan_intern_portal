@@ -7,12 +7,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'main.dart';
 import 'theme/app_theme.dart';
-import 'widgets/animated_theme_switcher.dart';
 import 'widgets/custom_button.dart';
 import 'core/utils/ultra_battery_saver.dart';
 import 'core/utils/battery_manager.dart';
+import 'core/utils/ui_preference_manager.dart';
 import 'core/constants/app_constants.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -45,6 +44,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     UltraBatterySaver.initialize();
     BatteryManager.initialize();
     AppConstants.updateFromUserPreferences(); // Apply user settings
+
+    preferenceNotifier.addListener(_onPreferencesChanged);
 
     _bgAnimationController = AnimationController(
       vsync: this,
@@ -114,6 +115,16 @@ class _RegisterScreenState extends State<RegisterScreen>
     });
   }
 
+  void _onPreferencesChanged() {
+    AppConstants.updateFromUserPreferences();
+
+    if (AppConstants.shouldEnableBackgroundAnimations) {
+      _bgAnimationController.repeat();
+    } else {
+      _bgAnimationController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _bgAnimationController.dispose();
@@ -123,6 +134,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     UltraBatterySaver.dispose();
+    preferenceNotifier.removeListener(_onPreferencesChanged);
     super.dispose();
   }
 
@@ -224,15 +236,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         automaticallyImplyLeading: false,
-        actions: [
-          AnimatedThemeSwitcher(
-            isDark: isDark,
-            onChanged: (v) {
-              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
-            },
-          ),
-          const SizedBox(width: 10),
-        ],
       ),
       body: Stack(
         children: [

@@ -12,14 +12,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/utils/battery_manager.dart';
+import 'core/utils/ui_preference_manager.dart';
 import 'core/utils/ultra_battery_saver.dart';
 import 'dashboard_screen.dart';
-import 'main.dart';
 import 'register_screen.dart';
 import 'services/auth_service.dart';
 import 'setup_profile_screen.dart';
 import 'theme/app_theme.dart';
-import 'widgets/animated_theme_switcher.dart';
 import 'widgets/custom_button.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -331,6 +330,8 @@ class _LoginScreenState extends State<LoginScreen>
     _loadSavedEmail();
     _initializeDeviceSecurity();
 
+    preferenceNotifier.addListener(_onPreferencesChanged);
+
     _bgAnimationController = AnimationController(
       vsync: this,
       duration: Duration(seconds: AppConstants.backgroundAnimationDurationSec),
@@ -352,6 +353,16 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  void _onPreferencesChanged() {
+    AppConstants.updateFromUserPreferences();
+
+    if (AppConstants.shouldEnableBackgroundAnimations) {
+      _bgAnimationController.repeat();
+    } else {
+      _bgAnimationController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _bgAnimationController.dispose();
@@ -359,6 +370,7 @@ class _LoginScreenState extends State<LoginScreen>
     _emailController.dispose();
     _passwordController.dispose();
     UltraBatterySaver.dispose();
+    preferenceNotifier.removeListener(_onPreferencesChanged);
     super.dispose();
   }
 
@@ -512,15 +524,6 @@ class _LoginScreenState extends State<LoginScreen>
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
-        actions: [
-          AnimatedThemeSwitcher(
-            isDark: isDark,
-            onChanged: (v) {
-              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
-            },
-          ),
-          const SizedBox(width: 10),
-        ],
       ),
       body: Stack(
         children: [

@@ -10,12 +10,11 @@ import 'package:flutter/services.dart';
 import 'collapsible_sidebar.dart';
 import 'core/constants/app_constants.dart';
 import 'core/utils/battery_manager.dart';
+import 'core/utils/ui_preference_manager.dart';
 import 'core/utils/ultra_battery_saver.dart';
-import 'main.dart';
 import 'settings_screen.dart';
 import 'setup_profile_screen.dart';
 import 'theme/app_theme.dart';
-import 'widgets/animated_theme_switcher.dart';
 import 'widgets/custom_button.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -60,6 +59,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     UltraBatterySaver.initialize();
     BatteryManager.initialize();
     AppConstants.updateFromUserPreferences();
+
+    preferenceNotifier.addListener(_onPreferencesChanged);
 
     _bgAnimationController = AnimationController(
       vsync: this,
@@ -147,12 +148,23 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  void _onPreferencesChanged() {
+    AppConstants.updateFromUserPreferences();
+
+    if (AppConstants.shouldEnableBackgroundAnimations) {
+      _bgAnimationController.repeat();
+    } else {
+      _bgAnimationController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _bgAnimationController.dispose();
     _entryController.dispose();
     _timer.cancel();
     UltraBatterySaver.dispose();
+    preferenceNotifier.removeListener(_onPreferencesChanged);
     super.dispose();
   }
 
@@ -265,13 +277,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
             ),
-          ),
-
-          AnimatedThemeSwitcher(
-            isDark: isDark,
-            onChanged: (v) {
-              themeNotifier.value = v ? ThemeMode.dark : ThemeMode.light;
-            },
           ),
         ],
       ),

@@ -1,28 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+import '../../main.dart';
+import '../../widgets/animated_theme_switcher.dart';
+import '../../theme/app_theme.dart';
+
+/// Global preference notifier for UI settings
+class PreferenceNotifier extends ChangeNotifier {
+  bool _animationsEnabled = false;
+  bool _batteryModeEnabled = true;
+
+  bool get animationsEnabled => _animationsEnabled;
+  bool get batteryModeEnabled => _batteryModeEnabled;
+
+  void updatePreferences(bool animations, bool batteryMode) {
+    _animationsEnabled = animations;
+    _batteryModeEnabled = batteryMode;
+    notifyListeners();
+  }
+}
+
+/// Global preference notifier instance
+final preferenceNotifier = PreferenceNotifier();
 
 /// UI Preference Manager for user customization
 class UIPreferenceManager {
   static const String _animationsKey = 'user_animation_preference';
   static const String _batteryModeKey = 'user_battery_mode_preference';
+  static const String _themeModeKey = 'user_theme_mode_preference';
   static bool _isInitialized = false;
   
   /// Initialize user preferences
   static Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Set defaults on first run
     if (!prefs.containsKey(_animationsKey)) {
       await prefs.setBool(_animationsKey, false); // Default to battery saving
     }
-    
+
     if (!prefs.containsKey(_batteryModeKey)) {
       await prefs.setBool(_batteryModeKey, true); // Default to battery mode
     }
-    
+
+    if (!prefs.containsKey(_themeModeKey)) {
+      await prefs.setBool(_themeModeKey, false); // Default to light mode
+    }
+
+    // Initialize preferenceNotifier with current values
+    final animations = prefs.getBool(_animationsKey) ?? false;
+    final batteryMode = prefs.getBool(_batteryModeKey) ?? true;
+    preferenceNotifier.updatePreferences(animations, batteryMode);
+
     _isInitialized = true;
   }
   
@@ -36,6 +67,8 @@ class UIPreferenceManager {
   static Future<void> setAnimationsEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_animationsKey, enabled);
+    final batteryMode = await getBatteryModeEnabled();
+    preferenceNotifier.updatePreferences(enabled, batteryMode);
   }
   
   /// Get user's battery mode preference
@@ -48,6 +81,20 @@ class UIPreferenceManager {
   static Future<void> setBatteryModeEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_batteryModeKey, enabled);
+    final animations = await getAnimationsEnabled();
+    preferenceNotifier.updatePreferences(animations, enabled);
+  }
+  
+  /// Get user's theme mode preference (true = dark, false = light)
+  static Future<bool> getThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_themeModeKey) ?? false;
+  }
+  
+  /// Set user's theme mode preference (true = dark, false = light)
+  static Future<void> setThemeMode(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_themeModeKey, isDark);
   }
   
   /// Check if animations should be enabled based on user preference
@@ -122,11 +169,14 @@ class UIPreferenceSettings extends StatefulWidget {
 
   @override
   State<UIPreferenceSettings> createState() => _UIPreferenceSettingsState();
+  
+  static final GlobalKey<_UIPreferenceSettingsState> globalKey = GlobalKey<_UIPreferenceSettingsState>();
 }
 
 class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
   bool _animationsEnabled = false;
   bool _batteryModeEnabled = true;
+  bool _isDarkMode = false;
   bool _isLoading = true;
 
   @override
@@ -138,72 +188,55 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
   Future<void> _loadPreferences() async {
     final animations = await UIPreferenceManager.getAnimationsEnabled();
     final batteryMode = await UIPreferenceManager.getBatteryModeEnabled();
+    final darkMode = await UIPreferenceManager.getThemeMode();
     
     setState(() {
       _animationsEnabled = animations;
       _batteryModeEnabled = batteryMode;
+      _isDarkMode = darkMode;
       _isLoading = false;
     });
   }
 
   Future<void> _toggleAnimations(bool value) async {
-    setState(() => _isLoading = true);
-    
-    try {
-      await UIPreferenceManager.setAnimationsEnabled(value);
-      
-      if (mounted) {
-        setState(() {
-          _animationsEnabled = value;
-          _isLoading = false;
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              value ? 'Animations enabled! Rich UI mode activated.' : 'Animations disabled for battery saving.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: value ? Colors.green : Colors.orange,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Error updating preferences',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    setState(() {
+      _animationsEnabled = value;
+    });
   }
 
   Future<void> _toggleBatteryMode(bool value) async {
+    setState(() {
+      _batteryModeEnabled = value;
+    });
+  }
+  
+  Future<void> savePreferences() async {
+    await UIPreferenceManager.setAnimationsEnabled(_animationsEnabled);
+    await UIPreferenceManager.setBatteryModeEnabled(_batteryModeEnabled);
+  }
+
+  Future<void> _toggleThemeMode(bool value) async {
     setState(() => _isLoading = true);
     
     try {
-      await UIPreferenceManager.setBatteryModeEnabled(value);
+      await UIPreferenceManager.setThemeMode(value);
+      
+      // Update global theme notifier
+      themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
       
       if (mounted) {
         setState(() {
-          _batteryModeEnabled = value;
+          _isDarkMode = value;
           _isLoading = false;
         });
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value ? 'Battery mode enabled for maximum efficiency.' : 'Battery mode disabled.',
+              value ? 'Dark mode enabled.' : 'Light mode enabled.',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            backgroundColor: value ? Colors.green : Colors.orange,
+            backgroundColor: value ? Colors.grey.shade800 : Colors.blue.shade100,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -233,37 +266,82 @@ class _UIPreferenceSettingsState extends State<UIPreferenceSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Animation toggle
-        SwitchListTile(
+        // Animation toggle with premium switch
+        ListTile(
           title: const Text('Rich Animations'),
           subtitle: Text(
             _animationsEnabled 
                 ? 'Beautiful animations enabled (uses more battery)'
                 : 'Animations disabled for battery saving',
           ),
-          value: _animationsEnabled,
-          onChanged: _isLoading ? null : _toggleAnimations,
-          secondary: Icon(
+          leading: Icon(
             _animationsEnabled ? Icons.animation : Icons.battery_saver,
             color: _animationsEnabled ? Colors.green : Colors.orange,
+          ),
+          trailing: AnimatedThemeSwitcher(
+            isDark: _animationsEnabled,
+            onChanged: (v) => _toggleAnimations(v),
+            size: 32.0,
+            activeIcon: Icons.animation,
+            inactiveIcon: Icons.battery_saver,
+            activeColor: Colors.green,
+            inactiveColor: Colors.orange,
+            activeTrackColor: Colors.green.withOpacity(0.3),
+            inactiveTrackColor: Colors.orange.withOpacity(0.3),
           ),
         ),
         
         const Divider(),
         
-        // Battery mode toggle
-        SwitchListTile(
+        // Dark mode toggle with premium switch
+        ListTile(
+          title: const Text('Dark Mode'),
+          subtitle: Text(
+            _isDarkMode 
+                ? 'Dark theme enabled for reduced eye strain'
+                : 'Light theme enabled for better visibility',
+          ),
+          leading: Icon(
+            _isDarkMode ? Icons.dark_mode : Icons.light_mode,
+            color: _isDarkMode ? Colors.grey.shade800 : Colors.orange,
+          ),
+          trailing: AnimatedThemeSwitcher(
+            isDark: _isDarkMode,
+            onChanged: (v) => _toggleThemeMode(v),
+            size: 32.0,
+            activeIcon: Icons.nightlight_round,
+            inactiveIcon: Icons.wb_sunny_rounded,
+            activeColor: AppTheme.primaryDark,
+            inactiveColor: AppTheme.primaryGold,
+            activeTrackColor: AppTheme.mainThemeBgDark,
+            inactiveTrackColor: AppTheme.mainThemeBgLight,
+          ),
+        ),
+        
+        const Divider(),
+        
+        // Battery mode toggle with premium switch
+        ListTile(
           title: const Text('Battery Saver Mode'),
           subtitle: Text(
             _batteryModeEnabled 
                 ? 'Maximum battery efficiency enabled'
                 : 'Standard performance mode',
           ),
-          value: _batteryModeEnabled,
-          onChanged: _isLoading ? null : _toggleBatteryMode,
-          secondary: Icon(
+          leading: Icon(
             _batteryModeEnabled ? Icons.battery_charging_full : Icons.power,
             color: _batteryModeEnabled ? Colors.green : Colors.orange,
+          ),
+          trailing: AnimatedThemeSwitcher(
+            isDark: _batteryModeEnabled,
+            onChanged: (v) => _toggleBatteryMode(v),
+            size: 32.0,
+            activeIcon: Icons.battery_charging_full,
+            inactiveIcon: Icons.power,
+            activeColor: Colors.green,
+            inactiveColor: Colors.orange,
+            activeTrackColor: Colors.green.withOpacity(0.3),
+            inactiveTrackColor: Colors.orange.withOpacity(0.3),
           ),
         ),
         

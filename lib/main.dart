@@ -7,6 +7,7 @@ import 'dashboard_screen.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
 import 'services/auth_service.dart';
+import 'theme/app_theme.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -15,10 +16,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  await UIPreferenceManager.initialize();
+
   final authService = AuthService();
   await authService.initialize();
-  await UIPreferenceManager.initialize();
   await UIPreferenceManager.applyUserPreferences();
+
+  // Load saved theme mode
+  final isDarkMode = await UIPreferenceManager.getThemeMode();
+  themeNotifier.value = isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
   runApp(const ZhiyuanApp());
 }
@@ -75,16 +81,8 @@ class _ZhiyuanAppState extends State<ZhiyuanApp> with WidgetsBindingObserver {
             title: 'Zhiyuan Intern Portal',
             debugShowCheckedModeBanner: false,
             themeMode: currentMode,
-            theme: ThemeData(
-              brightness: Brightness.light,
-              useMaterial3: true,
-              fontFamily: 'Inter',
-            ),
-            darkTheme: ThemeData(
-              brightness: Brightness.dark,
-              useMaterial3: true,
-              fontFamily: 'Inter',
-            ),
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
 
             // AUTOMATIC ROUTING: Check if user session is valid on startup
             home: FirebaseAuth.instance.currentUser != null

@@ -7,6 +7,7 @@ import 'core/utils/ui_preference_manager.dart';
 import 'core/utils/ultra_battery_saver.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/animated_theme_switcher.dart';
 import 'widgets/custom_button.dart';
 import 'widgets/glass_card.dart';
 
@@ -61,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!biometricSuccess) throw Exception('Failed to update biometrics');
 
       await _authService.setAutoLogoutMinutes(_autoLogoutMinutes);
+      await UIPreferenceSettings.globalKey.currentState?.savePreferences();
       await UIPreferenceManager.applyUserPreferences();
       await AppConstants.updateFromUserPreferences();
 
@@ -165,6 +167,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     isToggle: true,
                     value: _biometricEnabled,
                     onChanged: _isProcessing ? null : _toggleBiometric,
+                    activeIcon: Icons.fingerprint,
+                    inactiveIcon: Icons.lock_outline,
+                    activeColor: Colors.green,
+                    inactiveColor: Colors.grey,
                   ),
                 Divider(
                   height: 1,
@@ -203,7 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          GlassCard(child: UIPreferenceSettings()),
+          GlassCard(child: UIPreferenceSettings(key: UIPreferenceSettings.globalKey)),
           const SizedBox(height: 32),
           CustomButton(
             text: _isProcessing ? 'Saving...' : 'Save Settings',
@@ -284,6 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ValueChanged<bool>? onChanged,
     Widget? trailing,
     VoidCallback? onTap,
+    IconData? activeIcon,
+    IconData? inactiveIcon,
+    Color? activeColor,
+    Color? inactiveColor,
   }) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
@@ -330,10 +340,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               if (isToggle)
-                Switch(
-                  value: value ?? false,
-                  activeColor: AppTheme.primaryGold,
-                  onChanged: onChanged,
+                AnimatedThemeSwitcher(
+                  isDark: value ?? false,
+                  onChanged: onChanged ?? (v) {},
+                  size: 32.0,
+                  activeIcon: activeIcon ?? Icons.check,
+                  inactiveIcon: inactiveIcon ?? Icons.close,
+                  activeColor: activeColor ?? AppTheme.primaryGold,
+                  inactiveColor: inactiveColor ?? Colors.grey,
+                  activeTrackColor: (activeColor ?? AppTheme.primaryGold).withOpacity(0.3),
+                  inactiveTrackColor: (inactiveColor ?? Colors.grey).withOpacity(0.3),
                 )
               else if (trailing != null)
                 trailing,
