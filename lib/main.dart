@@ -3,10 +3,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'core/utils/ui_preference_manager.dart';
-import 'dashboard_screen.dart';
+import 'features/dashboard/dashboard_screen.dart';
 import 'firebase_options.dart';
-import 'login_screen.dart';
-import 'services/auth_service.dart';
+import 'features/auth/login_screen.dart';
+import 'core/services/auth_service.dart';
 import 'theme/app_theme.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);

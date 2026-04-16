@@ -10,16 +10,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'core/constants/app_constants.dart';
-import 'core/utils/battery_manager.dart';
-import 'core/utils/ui_preference_manager.dart';
-import 'core/utils/ultra_battery_saver.dart';
-import 'dashboard_screen.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/utils/battery_manager.dart';
+import '../../core/utils/ui_preference_manager.dart';
+import '../../core/utils/ultra_battery_saver.dart';
+import '../dashboard/dashboard_screen.dart';
 import 'register_screen.dart';
-import 'services/auth_service.dart';
-import 'setup_profile_screen.dart';
-import 'theme/app_theme.dart';
-import 'widgets/custom_button.dart';
+import '../../core/services/auth_service.dart';
+import '../profile/setup_profile_screen.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/custom_button.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

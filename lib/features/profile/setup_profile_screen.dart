@@ -14,12 +14,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'core/constants/app_constants.dart';
-import 'core/utils/battery_manager.dart';
-import 'core/utils/ultra_battery_saver.dart';
-import 'dashboard_screen.dart';
-import 'theme/app_theme.dart';
-import 'widgets/custom_button.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/utils/battery_manager.dart';
+import '../../core/utils/ultra_battery_saver.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/custom_button.dart';
 
 class SetupProfileScreen extends StatefulWidget {
   const SetupProfileScreen({super.key});

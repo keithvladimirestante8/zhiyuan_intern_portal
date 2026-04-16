@@ -7,12 +7,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'theme/app_theme.dart';
-import 'widgets/custom_button.dart';
-import 'core/utils/ultra_battery_saver.dart';
-import 'core/utils/battery_manager.dart';
-import 'core/utils/ui_preference_manager.dart';
-import 'core/constants/app_constants.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/custom_button.dart';
+import '../../core/utils/ultra_battery_saver.dart';
+import '../../core/utils/battery_manager.dart';
+import '../../core/utils/ui_preference_manager.dart';
+import '../../core/constants/app_constants.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});

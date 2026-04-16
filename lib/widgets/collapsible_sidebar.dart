@@ -6,8 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'login_screen.dart';
-import 'theme/app_theme.dart';
+import '../features/auth/login_screen.dart';
+import '../theme/app_theme.dart';
 
 class CollapsibleSidebar extends StatefulWidget {
   final String displayName;

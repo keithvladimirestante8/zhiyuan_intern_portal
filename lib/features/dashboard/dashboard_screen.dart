@@ -7,15 +7,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'collapsible_sidebar.dart';
-import 'core/constants/app_constants.dart';
-import 'core/utils/battery_manager.dart';
-import 'core/utils/ui_preference_manager.dart';
-import 'core/utils/ultra_battery_saver.dart';
-import 'settings_screen.dart';
-import 'setup_profile_screen.dart';
-import 'theme/app_theme.dart';
-import 'widgets/custom_button.dart';
+import '../../widgets/collapsible_sidebar.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/utils/battery_manager.dart';
+import '../../core/utils/ui_preference_manager.dart';
+import '../../core/utils/ultra_battery_saver.dart';
+import '../settings/settings_screen.dart';
+import '../profile/setup_profile_screen.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/custom_button.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});

@@ -1,15 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'core/constants/app_constants.dart';
-import 'core/utils/battery_manager.dart';
-import 'core/utils/ui_preference_manager.dart';
-import 'core/utils/ultra_battery_saver.dart';
-import 'services/auth_service.dart';
-import 'theme/app_theme.dart';
-import 'widgets/animated_theme_switcher.dart';
-import 'widgets/custom_button.dart';
-import 'widgets/glass_card.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/utils/battery_manager.dart';
+import '../../core/utils/ui_preference_manager.dart';
+import '../../core/utils/ultra_battery_saver.dart';
+import '../../core/services/auth_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/animated_theme_switcher.dart';
+import '../../widgets/custom_button.dart';
+import '../../widgets/glass_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
