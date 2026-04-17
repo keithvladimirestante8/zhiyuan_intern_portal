@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../constants/app_constants.dart';
+import 'app_constants.dart';
 
 /// Ultra battery saver for maximum battery life
 class UltraBatterySaver {

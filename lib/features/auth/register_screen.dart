@@ -13,7 +13,7 @@ import '../../widgets/custom_button.dart';
 import '../../core/utils/ultra_battery_saver.dart';
 import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ui_preference_manager.dart';
-import '../../core/constants/app_constants.dart';
+import '../../core/utils/app_constants.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});

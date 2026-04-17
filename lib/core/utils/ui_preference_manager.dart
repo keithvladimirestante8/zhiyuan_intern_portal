@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../constants/app_constants.dart';
+import 'app_constants.dart';
 import '../../main.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/animated_theme_switcher.dart';

@@ -64,4 +64,27 @@ class UserModel {
           : null,
     );
   }
+
+  // Convert UserModel to Firestore snake_case format
+  Map<String, dynamic> toMap() {
+    return {
+      'username': username,
+      'email': email,
+      'address': address,
+      'birthdate': birthdate,
+      'course': course,
+      'gender': gender,
+      'phone': phone,
+      'photo_url': photoUrl,
+      'resume_url': resumeUrl,
+      'role': role,
+      'school': school,
+      'target_completion_date': targetCompletionDate,
+      'required_hours': requiredHours,
+      'is_verified': isVerified,
+      'profile_setup_completed': profileSetupCompleted,
+      'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
+      'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : Timestamp.fromDate(DateTime.now()),
+    };
+  }
 }

@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_constants.dart';
+import '../../core/utils/app_constants.dart';
 import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ui_preference_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
