@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "822415255163",
+    "project_id": "zhiyuan-intern-portal",
+    "storage_bucket": "zhiyuan-intern-portal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:822415255163:android:153ebcaa9ce2bbc575e4de",
+        "android_client_info": {
+          "package_name": "com.zhiyuan.zhiyuan_intern_portal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAC5YDn0EYqzRVK-OCyvLI8JS_HtiEGYVw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
