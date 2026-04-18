@@ -15,6 +15,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/animated_theme_switcher.dart';
 import '../../widgets/collapsible_sidebar.dart';
 import '../../widgets/custom_button.dart';
+import '../../widgets/navigation/mac_dock_nav.dart';
+import '../auth/login_screen.dart';
 import '../profile/setup_profile_screen.dart';
 import '../settings/settings_screen.dart';
 import 'attendance_history_screen.dart';
@@ -30,10 +32,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     with TickerProviderStateMixin {
   final User? user = FirebaseAuth.instance.currentUser;
   late Timer _timer;
+  StreamSubscription<QuerySnapshot>? _attendanceSubscription;
   DateTime _currentTime = DateTime.now();
 
   late AnimationController _bgAnimationController;
   late AnimationController _entryController;
+  late PageController _pageController;
 
   String _displayName = "INTERN";
   double _requiredHours = 0.0;
@@ -84,6 +88,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       duration: Duration(milliseconds: AppConstants.adaptiveAnimationDuration),
     );
 
+    _pageController = PageController(initialPage: _selectedIndex);
+
     if (AppConstants.shouldEnableAnyAnimations) {
       _entryController.forward();
     } else {
@@ -126,39 +132,41 @@ class _DashboardScreenState extends State<DashboardScreen>
         });
       }
 
-      final allAttendance = await FirebaseFirestore.instance
+      final attendanceStream = FirebaseFirestore.instance
           .collection('attendance')
           .where('email', isEqualTo: user!.email)
-          .get();
+          .snapshots();
 
-      double totalHours = 0.0;
-      int completedShifts = 0;
+      _attendanceSubscription = attendanceStream.listen((snapshot) {
+        double totalHours = 0.0;
+        int completedShifts = 0;
 
-      for (var doc in allAttendance.docs) {
-        var data = doc.data();
+        for (var doc in snapshot.docs) {
+          var data = doc.data();
 
-        if (data['date'] == todayDate) {
-          _docId = doc.id;
-          _hasTimedIn = data['timeIn'] != null;
-          _hasTimedOut = data['timeOut'] != null;
+          if (data['date'] == todayDate) {
+            _docId = doc.id;
+            _hasTimedIn = data['timeIn'] != null;
+            _hasTimedOut = data['timeOut'] != null;
+          }
+
+          if (data['timeIn'] != null && data['timeOut'] != null) {
+            Timestamp timeIn = data['timeIn'];
+            Timestamp timeOut = data['timeOut'];
+            Duration difference = timeOut.toDate().difference(timeIn.toDate());
+
+            double shiftHours = difference.inMinutes / 60.0;
+            if (shiftHours >= 5.0) shiftHours -= 1.0;
+
+            totalHours += shiftHours;
+            completedShifts++;
+          }
         }
 
-        if (data['timeIn'] != null && data['timeOut'] != null) {
-          Timestamp timeIn = data['timeIn'];
-          Timestamp timeOut = data['timeOut'];
-          Duration difference = timeOut.toDate().difference(timeIn.toDate());
-
-          double shiftHours = difference.inMinutes / 60.0;
-          if (shiftHours >= 5.0) shiftHours -= 1.0;
-
-          totalHours += shiftHours;
-          completedShifts++;
-        }
-      }
-
-      setState(() {
-        _hoursRendered = totalHours;
-        _shiftsDone = completedShifts;
+        setState(() {
+          _hoursRendered = totalHours;
+          _shiftsDone = completedShifts;
+        });
       });
     } catch (e) {
       debugPrint("Error: $e");
@@ -181,7 +189,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     _bgAnimationController.dispose();
     _entryController.dispose();
+    _pageController.dispose();
     _timer.cancel();
+    _attendanceSubscription?.cancel();
     UltraBatterySaver.dispose();
     preferenceNotifier.removeListener(_onPreferencesChanged);
     super.dispose();
@@ -550,6 +560,165 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Future<void> _showLogoutConfirmation(BuildContext context) async {
+    HapticFeedback.mediumImpact();
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (BuildContext dialogContext) {
+        final bool isDark = Theme.of(context).brightness == Brightness.dark;
+        final dialogBg = isDark ? const Color(0xFF1A1C20) : Colors.white;
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Dialog(
+            backgroundColor: dialogBg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            elevation: 24,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Container(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Colors.redAccent, Colors.red],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      "Logout",
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppTheme.primaryDark,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Are you sure you want to end your current session?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              side: BorderSide(
+                                color: isDark
+                                    ? Colors.grey.shade800
+                                    : Colors.grey.shade300,
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: Text(
+                              "Cancel",
+                              style: TextStyle(
+                                color: isDark ? Colors.white : AppTheme.primaryDark,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              gradient: const LinearGradient(
+                                colors: [Colors.redAccent, Colors.red],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.redAccent.withOpacity(0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                HapticFeedback.mediumImpact();
+                                Navigator.of(dialogContext).pop();
+                                await FirebaseAuth.instance.signOut();
+                                if (mounted) {
+                                  Navigator.pushAndRemoveUntil(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const LoginScreen(),
+                                    ),
+                                    (route) => false,
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: const Text(
+                                "Logout",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSidebar(bool isDark, Color textColor, {required bool isMobile}) {
     return CollapsibleSidebar(
       key: ValueKey(isMobile),
@@ -564,6 +733,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() {
           _selectedIndex = index;
         });
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOutCubic,
+        );
         if (isMobile) {
           Navigator.pop(context);
         }
@@ -584,20 +758,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
       child: Row(
         children: [
-          if (!isDesktop) ...[
-            Builder(
-              builder: (context) => IconButton(
-                icon: Icon(
-                  Icons.menu_rounded,
-                  color: isDark ? Colors.white : AppTheme.primaryDark,
-                ),
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
           if (isDesktop) const SizedBox(width: 16),
-
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
@@ -625,30 +786,32 @@ class _DashboardScreenState extends State<DashboardScreen>
     Color cardBg,
     double clampedProgress,
   ) {
-    switch (_selectedIndex) {
-      case 0:
-        return _buildDashboardContent(
-          isDesktop,
-          isDark,
-          textColor,
-          cardBg,
-          clampedProgress,
-        );
-      case 1:
-        return const SetupProfileScreen();
-      case 2:
-        return const AttendanceHistoryScreen();
-      case 3:
-        return const SettingsScreen();
-      default:
-        return _buildDashboardContent(
-          isDesktop,
-          isDark,
-          textColor,
-          cardBg,
-          clampedProgress,
-        );
-    }
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: isDesktop ? 0 : 100.0,
+      ),
+      child: PageView(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        physics: isDesktop ? const NeverScrollableScrollPhysics() : null,
+        children: [
+          _buildDashboardContent(
+            isDesktop,
+            isDark,
+            textColor,
+            cardBg,
+            clampedProgress,
+          ),
+          const SetupProfileScreen(),
+          const AttendanceHistoryScreen(),
+          const SettingsScreen(),
+        ],
+      ),
+    );
   }
 
   Widget _buildDashboardContent(
@@ -659,7 +822,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     double clampedProgress,
   ) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+      padding: EdgeInsets.only(
+        left: 32,
+        right: 32,
+        top: 16,
+        bottom: isDesktop ? 16 : 120,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -853,15 +1021,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ? AppTheme.dashboardBaseDark
           : AppTheme.dashboardBgLight,
       extendBodyBehindAppBar: false,
-      drawer: !isDesktop
-          ? Drawer(
-              backgroundColor: isDark
-                  ? AppTheme.sidebarBgDark
-                  : AppTheme.sidebarBgLight,
-              elevation: 0,
-              child: _buildSidebar(isDark, textColor, isMobile: true),
-            )
-          : null,
+      drawer: null,
       body: Row(
         children: [
           if (isDesktop) _buildSidebar(isDark, textColor, isMobile: false),
@@ -906,30 +1066,53 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     color: AppTheme.primaryGold,
                                   ),
                                 )
-                              : AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 300),
-                                  transitionBuilder:
-                                      (
-                                        Widget child,
-                                        Animation<double> animation,
-                                      ) {
-                                        return FadeTransition(
-                                          opacity: animation,
-                                          child: child,
-                                        );
-                                      },
-                                  child: _buildActiveContent(
-                                    isDesktop,
-                                    isDark,
-                                    textColor,
-                                    cardBg,
-                                    clampedProgress,
-                                  ),
+                              : _buildActiveContent(
+                                  isDesktop,
+                                  isDark,
+                                  textColor,
+                                  cardBg,
+                                  clampedProgress,
                                 ),
                         ),
                       ],
                     ),
                   ),
+                  if (!isDesktop)
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + 10,
+                      right: 16,
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.logout_rounded,
+                          color: AppTheme.primaryGold,
+                          size: 24,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        onPressed: () => _showLogoutConfirmation(context),
+                        tooltip: 'Logout',
+                      ),
+                    ),
+                  if (!isDesktop)
+                    MacDockNav(
+                      selectedIndex: _selectedIndex,
+                      onItemSelected: (index) {
+                        setState(() {
+                          _selectedIndex = index;
+                        });
+                        _pageController.animateToPage(
+                          index,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOutCubic,
+                        );
+                      },
+                      isDark: isDark,
+                    ),
                 ],
               ),
             ),

@@ -1,4 +1,4 @@
-import 'dart:io' show File;
+import 'dart:io' show File, Platform;
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -155,14 +155,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppTheme.primaryGold.withOpacity(0.2),
-                            AppTheme.primaryDark.withOpacity(0.2),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: isDark
+                            ? AppTheme.primaryDark.withOpacity(0.3)
+                            : Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
@@ -178,7 +173,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         Text(
                           'Edit Attendance',
                           style: TextStyle(
-                            color: isDark ? Colors.white : const Color(0xFF1A232E),
+                            color: isDark ? Colors.white : Colors.black87,
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
@@ -386,6 +381,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         final blob = html.Blob([bytes]);
         final url = html.Url.createObjectUrlFromBlob(blob);
         html.AnchorElement(href: url)..setAttribute("download", "DTR_${_displayName.replaceAll(' ', '_')}.pdf")..click();
+      } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        final directory = await getDownloadsDirectory();
+        final file = File('${directory!.path}/DTR_${_displayName.replaceAll(' ', '_')}.pdf');
+        await file.writeAsBytes(bytes);
+        await OpenFile.open(file.path);
       } else {
         await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => bytes, name: 'DTR_${_displayName.replaceAll(' ', '_')}');
       }
@@ -903,15 +903,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            Text(
-              label,
-              style: TextStyle(
-                color: isDark ? Colors.white : const Color(0xFF1A232E),
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF1A232E),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             Text(
               selectedTime != null
                   ? "${selectedTime.hour > 12 ? selectedTime.hour - 12 : (selectedTime.hour == 0 ? 12 : selectedTime.hour)}:${selectedTime.minute.toString().padLeft(2, '0')} ${selectedTime.period == DayPeriod.am ? 'AM' : 'PM'}"

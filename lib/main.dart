@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'core/utils/ui_preference_manager.dart';
+import 'core/widgets/auth_guard.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'firebase_options.dart';
 import 'features/auth/login_screen.dart';
@@ -84,10 +85,8 @@ class _ZhiyuanAppState extends State<ZhiyuanApp> with WidgetsBindingObserver {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
 
-            // AUTOMATIC ROUTING: Check if user session is valid on startup
-            home: FirebaseAuth.instance.currentUser != null
-                ? const DashboardScreen()
-                : const LoginScreen(),
+            // AUTOMATIC ROUTING: AuthGuard checks profile setup completion
+            home: const AuthGuard(),
           ),
         );
       },

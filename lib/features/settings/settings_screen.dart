@@ -1,14 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/services/auth_service.dart';
 import '../../core/utils/app_constants.dart';
 import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ui_preference_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
-import '../../core/services/auth_service.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/app_snackbar.dart';
 import '../../widgets/animated_theme_switcher.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/glass_card.dart';
 
@@ -190,7 +190,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          GlassCard(child: UIPreferenceSettings(key: UIPreferenceSettings.globalKey)),
+          GlassCard(
+            child: UIPreferenceSettings(key: UIPreferenceSettings.globalKey),
+          ),
           const SizedBox(height: 32),
           CustomButton(
             text: _isProcessing ? 'Saving...' : 'Save Settings',
@@ -306,6 +308,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         fontSize: 16,
                         color: isDark ? Colors.white : const Color(0xFF1A232E),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       subtitle,
@@ -315,6 +319,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? Colors.grey.shade400
                             : Colors.grey.shade600,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -328,8 +334,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   inactiveIcon: inactiveIcon ?? Icons.close,
                   activeColor: activeColor ?? AppTheme.primaryGold,
                   inactiveColor: inactiveColor ?? Colors.grey,
-                  activeTrackColor: (activeColor ?? AppTheme.primaryGold).withOpacity(0.3),
-                  inactiveTrackColor: (inactiveColor ?? Colors.grey).withOpacity(0.3),
+                  activeTrackColor: (activeColor ?? AppTheme.primaryGold)
+                      .withOpacity(0.3),
+                  inactiveTrackColor: (inactiveColor ?? Colors.grey)
+                      .withOpacity(0.3),
                 )
               else if (trailing != null)
                 trailing,

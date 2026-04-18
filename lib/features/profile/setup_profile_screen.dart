@@ -1,6 +1,7 @@
 import 'dart:async' show Timer, TimeoutException;
 import 'dart:convert';
-import 'dart:io' show SocketException;
+import 'dart:io' show SocketException, File;
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,10 +18,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/utils/app_constants.dart';
 import '../../core/utils/battery_manager.dart';
 import '../../core/utils/ultra_battery_saver.dart';
-import '../dashboard/dashboard_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/custom_button.dart';
+import '../auth/login_screen.dart';
+import '../dashboard/dashboard_screen.dart';
 
 class SetupProfileScreen extends StatefulWidget {
   const SetupProfileScreen({super.key});
@@ -44,9 +46,12 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   final FocusNode _courseFocusNode = FocusNode();
 
   Timer? _debounceTimer;
+  late AnimationController _bgAnimationController;
   late AnimationController _entryController;
+  bool _isInitialized = false;
 
   bool _isLoading = false;
+  bool _isProfileCompleted = false;
   Uint8List? _selectedPhotoBytes;
   Uint8List? _selectedResumeBytes;
   String? _uploadedPhotoUrl;
@@ -84,34 +89,50 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   void initState() {
     super.initState();
 
-    UltraBatterySaver.initialize();
-    BatteryManager.initialize();
-    AppConstants.updateFromUserPreferences(); // Apply user settings
-
-    _checkExistingProfile();
-    _fetchDynamicSuggestions();
+    _bgAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    );
 
     _entryController = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: AppConstants.adaptiveAnimationDuration),
     );
 
-    if (AppConstants.shouldEnableAnyAnimations) {
-      _entryController.forward();
-    } else {
-      _entryController.value = 1.0;
-    }
+    UltraBatterySaver.initialize();
+    BatteryManager.initialize();
+    AppConstants.updateFromUserPreferences();
 
-    _usernameController.addListener(_onTextChanged);
-    _phoneController.addListener(_onTextChanged);
-    _addressController.addListener(_onTextChanged);
-    _schoolController.addListener(_onTextChanged);
-    _courseController.addListener(_onTextChanged);
-    _hoursController.addListener(_onTextChanged);
+    _loadInitialData();
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  Future<void> _loadInitialData() async {
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    await _checkExistingProfile();
+    await _fetchDynamicSuggestions();
+
+    if (mounted) {
+      if (AppConstants.shouldEnableAnyAnimations) {
+        _bgAnimationController.repeat();
+        _entryController.forward();
+      } else {
+        _entryController.value = 1.0;
+      }
+
+      setState(() {
+        _isInitialized = true;
+      });
+
+      _usernameController.addListener(_onTextChanged);
+      _phoneController.addListener(_onTextChanged);
+      _addressController.addListener(_onTextChanged);
+      _schoolController.addListener(_onTextChanged);
+      _courseController.addListener(_onTextChanged);
+      _hoursController.addListener(_onTextChanged);
+
       _loadDraft();
-    });
+    }
   }
 
   void _onTextChanged() {
@@ -140,6 +161,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
 
     final parsedHours = double.tryParse(_hoursController.text.trim());
     if (parsedHours == null || parsedHours < 100) {
+      return false;
+    }
+
+    if (_selectedResumeBytes == null && _uploadedResumeUrl == null) {
       return false;
     }
 
@@ -299,6 +324,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _bgAnimationController.dispose();
     _entryController.dispose();
     _usernameController.dispose();
     _phoneController.dispose();
@@ -321,6 +347,7 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     if (doc.exists) {
       final data = doc.data()!;
       setState(() {
+        _isProfileCompleted = data['profile_setup_completed'] ?? false;
         _usernameController.text = data['username'] ?? "";
         _phoneController.text = data['phone'] ?? "";
         _addressController.text = data['address'] ?? "";
@@ -351,14 +378,267 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
+      withData: true,
     );
+
     if (result != null) {
-      final bytes = result.files.first.bytes;
-      setState(() {
-        _selectedResumeBytes = bytes;
-      });
-      _onTextChanged();
+      final platformFile = result.files.first;
+      Uint8List? bytes = platformFile.bytes;
+
+      if (bytes == null && platformFile.path != null) {
+        bytes = await File(platformFile.path!).readAsBytes();
+      }
+
+      if (bytes != null) {
+        setState(() {
+          _selectedResumeBytes = bytes;
+        });
+        _onTextChanged();
+      }
     }
+  }
+
+  // --- DELETE LOGIC ---
+  Future<void> _deletePhoto() async {
+    HapticFeedback.mediumImpact();
+    if (_selectedPhotoBytes != null) {
+      setState(() => _selectedPhotoBytes = null);
+      return;
+    }
+    if (_uploadedPhotoUrl != null) {
+      final confirm = await _showDeleteConfirmDialog("Delete profile picture?");
+      if (confirm == true) {
+        setState(() => _isLoading = true);
+        await FirebaseFirestore.instance
+            .collection('intern_profiles')
+            .doc(user!.uid)
+            .update({'photo_url': FieldValue.delete()});
+        setState(() {
+          _uploadedPhotoUrl = null;
+          _isLoading = false;
+        });
+        if (mounted) AppSnackbar.success(context, 'Photo removed.');
+      }
+    }
+  }
+
+  Future<void> _deleteResume() async {
+    HapticFeedback.mediumImpact();
+    if (_selectedResumeBytes != null) {
+      setState(() => _selectedResumeBytes = null);
+      return;
+    }
+    if (_uploadedResumeUrl != null) {
+      final confirm = await _showDeleteConfirmDialog("Delete uploaded resume?");
+      if (confirm == true) {
+        setState(() => _isLoading = true);
+        await FirebaseFirestore.instance
+            .collection('intern_profiles')
+            .doc(user!.uid)
+            .update({'resume_url': FieldValue.delete()});
+        setState(() {
+          _uploadedResumeUrl = null;
+          _isLoading = false;
+        });
+        if (mounted) AppSnackbar.success(context, 'Resume removed.');
+      }
+    }
+  }
+
+  Future<bool?> _showDeleteConfirmDialog(String title) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1A1C20) : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: const Text("This action cannot be undone."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                "DELETE",
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showLogoutConfirmation(BuildContext context) async {
+    HapticFeedback.mediumImpact();
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (BuildContext dialogContext) {
+        final bool isDark = Theme.of(context).brightness == Brightness.dark;
+        final dialogBg = isDark ? const Color(0xFF1A1C20) : Colors.white;
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Dialog(
+            backgroundColor: dialogBg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            elevation: 24,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Container(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Colors.redAccent, Colors.red],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      "Logout",
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppTheme.primaryDark,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Are you sure you want to end your current session?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              side: BorderSide(
+                                color: isDark
+                                    ? Colors.grey.shade800
+                                    : Colors.grey.shade300,
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: Text(
+                              "Cancel",
+                              style: TextStyle(
+                                color: isDark ? Colors.white : AppTheme.primaryDark,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              gradient: const LinearGradient(
+                                colors: [Colors.redAccent, Colors.red],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.redAccent.withOpacity(0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                HapticFeedback.mediumImpact();
+                                Navigator.of(dialogContext).pop();
+                                await FirebaseAuth.instance.signOut();
+                                if (mounted) {
+                                  Navigator.pushAndRemoveUntil(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const LoginScreen(),
+                                    ),
+                                    (route) => false,
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: const Text(
+                                "Logout",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _handlePdfPreview() async {
@@ -389,14 +669,21 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
               child: Column(
                 children: [
                   AppBar(
-                    backgroundColor: isDark ? AppTheme.gradient2Dark : AppTheme.gradient2Light,
+                    backgroundColor: isDark
+                        ? AppTheme.gradient2Dark
+                        : AppTheme.gradient2Light,
                     title: Text(
                       "PDF PREVIEW",
-                      style: TextStyle(color: isDark ? Colors.white : AppTheme.primaryDark),
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppTheme.primaryDark,
+                      ),
                     ),
                     actions: [
                       IconButton(
-                        icon: Icon(Icons.close, color: isDark ? Colors.white : AppTheme.primaryDark),
+                        icon: Icon(
+                          Icons.close,
+                          color: isDark ? Colors.white : AppTheme.primaryDark,
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -470,6 +757,8 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     final request = http.MultipartRequest('POST', url);
     request.fields['upload_preset'] = 'zhiyuan_preset';
     request.fields['public_id'] = publicId;
+    request.fields['resource_type'] = 'auto';
+
     request.files.add(
       http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
     );
@@ -535,6 +824,10 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
             'updated_at': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
+      await FirebaseFirestore.instance.collection('users').doc(user?.uid).set({
+        'profile_setup_completed': true,
+      }, SetOptions(merge: true));
+
       if (user != null) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('profile_draft_${user!.uid}');
@@ -569,15 +862,267 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     if (_courseController.text.trim().isNotEmpty) filledFields++;
 
     final parsedHours = double.tryParse(_hoursController.text.trim());
-    if (parsedHours != null && parsedHours >= 100) {
+    if (parsedHours != null && parsedHours >= 100) filledFields++;
+    if (_selectedResumeBytes != null || _uploadedResumeUrl != null)
       filledFields++;
-    }
-
-    if (_selectedPhotoBytes != null || _uploadedPhotoUrl != null) {
-      filledFields++;
-    }
 
     return filledFields / totalFields;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color cardBg = isDark
+        ? const Color(0x1AFFFFFF)
+        : const Color(0xE6FFFFFF);
+    final double progressValue = _calculateProgress();
+    final bool isNestedInDashboard =
+        context.findAncestorWidgetOfExactType<DashboardScreen>() != null;
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          if (!isNestedInDashboard) ...[
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _bgAnimationController,
+                builder: (context, child) {
+                  return CustomPaint(
+                    painter: MeshGradientPainter(
+                      animationValue: _bgAnimationController.value,
+                      isDark: isDark,
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.02,
+                child: Center(
+                  child: Image.asset(
+                    'assets/images/zhiyuan_logo.png',
+                    width: MediaQuery.of(context).size.width * 0.6,
+                    height: MediaQuery.of(context).size.height * 0.6,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 800),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: !_isInitialized
+                ? _buildPremiumLoading(isDark, cardBg)
+                : _buildMainForm(isDark, cardBg, progressValue),
+          ),
+
+          if (_isInitialized && !_isProfileCompleted)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: IconButton(
+                icon: Icon(
+                  Icons.logout_rounded,
+                  color: isDark
+                      ? Colors.white70
+                      : AppTheme.primaryDark.withValues(alpha: 0.7),
+                  size: 28,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                onPressed: () => _showLogoutConfirmation(context),
+                tooltip: 'Logout',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumLoading(bool isDark, Color cardBg) {
+    return Center(
+      key: const ValueKey('loading_screen'),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 40),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.08 : 0.6),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
+                  blurRadius: 50,
+                  spreadRadius: 10,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  height: 50,
+                  width: 50,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.primaryGold,
+                    strokeWidth: 3,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  "Syncing Profile...",
+                  style: TextStyle(
+                    color: isDark ? Colors.grey.shade300 : AppTheme.primaryDark,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainForm(bool isDark, Color cardBg, double progressValue) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: FadeTransition(
+            opacity: _entryController,
+            child: SlideTransition(
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: _entryController,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  child: Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: isDark ? 0.08 : 0.6,
+                        ),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.2 : 0.05,
+                          ),
+                          blurRadius: 50,
+                          spreadRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildProgressHeader(isDark, progressValue),
+                        _buildProfilePic(),
+                        const SizedBox(height: 30),
+                        _buildCardContainer(cardBg, [
+                          _buildTextField(
+                            _usernameController,
+                            "Full Name *",
+                            Icons.person,
+                            isDark,
+                            autoCapitalize: true,
+                          ),
+                          const SizedBox(height: 15),
+                          Row(
+                            children: [
+                              Expanded(child: _buildGenderDropdown(isDark)),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: _buildTextField(
+                                  _hoursController,
+                                  "Req. Hours",
+                                  Icons.timer,
+                                  isDark,
+                                  isNumber: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 15),
+                          _buildPhoneField(isDark),
+                          const SizedBox(height: 15),
+                          _buildTextField(
+                            _addressController,
+                            "Address",
+                            Icons.home,
+                            isDark,
+                          ),
+                        ]),
+                        const SizedBox(height: 20),
+                        _buildCardContainer(cardBg, [
+                          _buildAutocompleteField(
+                            controller: _schoolController,
+                            focusNode: _schoolFocusNode,
+                            label: "School",
+                            icon: Icons.school,
+                            isDark: isDark,
+                            autoCapitalize: true,
+                            suggestions: _dynamicSchoolSuggestions,
+                          ),
+                          const SizedBox(height: 15),
+                          _buildAutocompleteField(
+                            controller: _courseController,
+                            focusNode: _courseFocusNode,
+                            label: "Course",
+                            icon: Icons.book,
+                            isDark: isDark,
+                            autoCapitalize: true,
+                            suggestions: _dynamicCourseSuggestions,
+                          ),
+                        ]),
+                        const SizedBox(height: 30),
+                        _buildResumeBox(isDark, cardBg),
+                        const SizedBox(height: 40),
+                        _buildSaveButton(isDark),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildProgressHeader(bool isDark, double progressValue) {
@@ -617,265 +1162,68 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color cardBg = isDark
-        ? const Color(0x1AFFFFFF)
-        : const Color(0xE6FFFFFF);
-
-    final double progressValue = _calculateProgress();
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: FadeTransition(
-            opacity: CurvedAnimation(
-              parent: _entryController,
-              curve: Curves.easeIn,
+  Widget _buildProfilePic() {
+    final bool hasImage =
+        _selectedPhotoBytes != null || _uploadedPhotoUrl != null;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        GestureDetector(
+          onTap: _pickImage,
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppTheme.primaryGold, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryGold.withValues(alpha: 0.3),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
-            child: SlideTransition(
-              position:
-                  Tween<Offset>(
-                    begin: const Offset(0, 0.1),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(
-                      parent: _entryController,
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(32),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                  child: Container(
-                    padding: const EdgeInsets.all(40),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(32),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(isDark ? 0.08 : 0.6),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
-                          blurRadius: 50,
-                          spreadRadius: 10,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.0, 0.3),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.2),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(0.0, 0.3),
-                                  ),
-                                ),
-                            child: Column(
-                              children: [
-                                _buildProgressHeader(isDark, progressValue),
-                                _buildProfilePic(),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.1, 0.5),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.15),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(0.1, 0.5),
-                                  ),
-                                ),
-                            child: _buildCardContainer(cardBg, [
-                              _buildTextField(
-                                _usernameController,
-                                "Full Name *",
-                                Icons.person,
-                                isDark,
-                                autoCapitalize: true,
-                              ),
-                              const SizedBox(height: 15),
-                              Row(
-                                children: [
-                                  Expanded(child: _buildGenderDropdown(isDark)),
-                                  const SizedBox(width: 15),
-                                  Expanded(
-                                    child: _buildTextField(
-                                      _hoursController,
-                                      "Req. Hours",
-                                      Icons.timer,
-                                      isDark,
-                                      isNumber: true,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 15),
-                              _buildPhoneField(isDark),
-                              const SizedBox(height: 15),
-                              _buildTextField(
-                                _addressController,
-                                "Address",
-                                Icons.home,
-                                isDark,
-                              ),
-                            ]),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.2, 0.7),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(0.2, 0.7),
-                                  ),
-                                ),
-                            child: _buildCardContainer(cardBg, [
-                              _buildAutocompleteField(
-                                controller: _schoolController,
-                                focusNode: _schoolFocusNode,
-                                label: "School",
-                                icon: Icons.school,
-                                isDark: isDark,
-                                autoCapitalize: true,
-                                suggestions: _dynamicSchoolSuggestions,
-                              ),
-                              const SizedBox(height: 15),
-                              _buildAutocompleteField(
-                                controller: _courseController,
-                                focusNode: _courseFocusNode,
-                                label: "Course",
-                                icon: Icons.book,
-                                isDark: isDark,
-                                autoCapitalize: true,
-                                suggestions: _dynamicCourseSuggestions,
-                              ),
-                            ]),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.3, 0.9),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.05),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(0.3, 0.9),
-                                  ),
-                                ),
-                            child: _buildResumeBox(isDark, cardBg),
-                          ),
-                        ),
-                        const SizedBox(height: 40),
-                        FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: _entryController,
-                            curve: const Interval(0.4, 1.0),
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 0.0),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _entryController,
-                                    curve: const Interval(0.4, 1.0),
-                                  ),
-                                ),
-                            child: _buildSaveButton(isDark),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+            child: CircleAvatar(
+              radius: 58,
+              backgroundColor: AppTheme.primaryGold.withValues(alpha: 0.1),
+              backgroundImage: _selectedPhotoBytes != null
+                  ? MemoryImage(_selectedPhotoBytes!)
+                  : (_uploadedPhotoUrl != null
+                        ? NetworkImage(_uploadedPhotoUrl!)
+                        : null),
+              child: !hasImage
+                  ? const Icon(
+                      Icons.camera_alt,
+                      color: AppTheme.primaryGold,
+                      size: 30,
+                    )
+                  : null,
+            ),
+          ),
+        ),
+        if (hasImage)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: GestureDetector(
+              onTap: _deletePhoto,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                ),
+                child: const Icon(
+                  Icons.delete_forever_rounded,
+                  color: Colors.white,
+                  size: 16,
                 ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfilePic() {
-    return GestureDetector(
-      onTap: () async {
-        await _pickImage();
-      },
-      child: Container(
-        width: 120,
-        height: 120,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: AppTheme.primaryGold, width: 3),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.primaryGold.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: CircleAvatar(
-          radius: 58,
-          backgroundColor: AppTheme.primaryGold.withOpacity(0.1),
-          backgroundImage: _selectedPhotoBytes != null
-              ? MemoryImage(_selectedPhotoBytes!)
-              : (_uploadedPhotoUrl != null
-                    ? NetworkImage(_uploadedPhotoUrl!)
-                    : null),
-          child: _selectedPhotoBytes == null && _uploadedPhotoUrl == null
-              ? const Icon(
-                  Icons.camera_alt,
-                  color: AppTheme.primaryGold,
-                  size: 30,
-                )
-              : null,
-        ),
-      ),
+      ],
     );
   }
 
@@ -886,10 +1234,13 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -900,59 +1251,36 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   }
 
   Widget _buildPhoneField(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.1 : 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: _phoneController,
-        keyboardType: TextInputType.phone,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black),
-        inputFormatters: [
-          FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(10),
-        ],
-        decoration: InputDecoration(
-          labelText: 'Mobile Number',
-          labelStyle: TextStyle(
-            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-            fontSize: 13,
-          ),
-          prefixText: '+63 ',
-          prefixIcon: const Icon(
-            Icons.phone,
-            color: AppTheme.primaryGold,
-            size: 20,
-          ),
-          hintText: '9123456789',
-          filled: true,
-          fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.transparent),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
-              color: AppTheme.primaryGold,
-              width: 1.5,
-            ),
-          ),
+    return TextField(
+      controller: _phoneController,
+      keyboardType: TextInputType.phone,
+      style: TextStyle(color: isDark ? Colors.white : Colors.black),
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(10),
+      ],
+      decoration: InputDecoration(
+        labelText: 'Mobile Number',
+        labelStyle: TextStyle(
+          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          fontSize: 13,
         ),
-        onChanged: (value) {
-          if (value.startsWith('+63')) {
-            _phoneController.text = value.substring(3);
-            _phoneController.selection = TextSelection.fromPosition(
-              TextPosition(offset: _phoneController.text.length),
-            );
-          }
-        },
+        prefixText: '+63 ',
+        prefixIcon: const Icon(
+          Icons.phone,
+          color: AppTheme.primaryGold,
+          size: 20,
+        ),
+        filled: true,
+        fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.transparent),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.primaryGold, width: 1.5),
+        ),
       ),
     );
   }
@@ -965,43 +1293,29 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     bool isNumber = false,
     bool autoCapitalize = false,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.1 : 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        textCapitalization: autoCapitalize
-            ? TextCapitalization.words
-            : TextCapitalization.none,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(
-            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-            fontSize: 13,
-          ),
-          prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
-          filled: true,
-          fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.transparent),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
-              color: AppTheme.primaryGold,
-              width: 1.5,
-            ),
-          ),
+    return TextField(
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      textCapitalization: autoCapitalize
+          ? TextCapitalization.words
+          : TextCapitalization.none,
+      style: TextStyle(color: isDark ? Colors.white : Colors.black),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(
+          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          fontSize: 13,
+        ),
+        prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
+        filled: true,
+        fillColor: isDark ? const Color(0x1A000000) : const Color(0x80FFFFFF),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.transparent),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.primaryGold, width: 1.5),
         ),
       ),
     );
@@ -1016,98 +1330,74 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
     required Iterable<String> suggestions,
     bool autoCapitalize = false,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.1 : 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: RawAutocomplete<String>(
-        textEditingController: controller,
-        focusNode: focusNode,
-        optionsBuilder: (TextEditingValue textValue) {
-          if (textValue.text.isEmpty) return const Iterable<String>.empty();
-          return suggestions.where((String option) {
-            return option.toLowerCase().contains(textValue.text.toLowerCase());
-          });
-        },
-        onSelected: (String selection) {
-          controller.text = selection;
-          _onTextChanged();
-        },
-        fieldViewBuilder:
-            (
-              BuildContext context,
-              TextEditingController fieldTextEditingController,
-              FocusNode fieldFocusNode,
-              VoidCallback onFieldSubmitted,
-            ) {
-              return TextField(
-                controller: fieldTextEditingController,
-                focusNode: fieldFocusNode,
-                textCapitalization: autoCapitalize
-                    ? TextCapitalization.words
-                    : TextCapitalization.none,
-                style: TextStyle(color: isDark ? Colors.white : Colors.black),
-                decoration: InputDecoration(
-                  labelText: label,
-                  labelStyle: TextStyle(
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    fontSize: 13,
-                  ),
-                  prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
-                  filled: true,
-                  fillColor: isDark
-                      ? const Color(0x1A000000)
-                      : const Color(0x80FFFFFF),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Colors.transparent),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: AppTheme.primaryGold,
-                      width: 1.5,
-                    ),
-                  ),
+    return RawAutocomplete<String>(
+      textEditingController: controller,
+      focusNode: focusNode,
+      optionsBuilder: (textValue) => textValue.text.isEmpty
+          ? const Iterable<String>.empty()
+          : suggestions.where(
+              (opt) => opt.toLowerCase().contains(textValue.text.toLowerCase()),
+            ),
+      onSelected: (selection) {
+        controller.text = selection;
+        _onTextChanged();
+      },
+      fieldViewBuilder:
+          (context, fieldController, fieldFocus, onFieldSubmitted) => TextField(
+            controller: fieldController,
+            focusNode: fieldFocus,
+            textCapitalization: autoCapitalize
+                ? TextCapitalization.words
+                : TextCapitalization.none,
+            style: TextStyle(color: isDark ? Colors.white : Colors.black),
+            decoration: InputDecoration(
+              labelText: label,
+              labelStyle: TextStyle(
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                fontSize: 13,
+              ),
+              prefixIcon: Icon(icon, color: AppTheme.primaryGold, size: 20),
+              filled: true,
+              fillColor: isDark
+                  ? const Color(0x1A000000)
+                  : const Color(0x80FFFFFF),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Colors.transparent),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(
+                  color: AppTheme.primaryGold,
+                  width: 1.5,
                 ),
-              );
-            },
-        optionsViewBuilder: (context, onSelected, options) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: Material(
-              elevation: 4.0,
-              borderRadius: BorderRadius.circular(14),
-              color: isDark ? const Color(0xFF1A1C20) : Colors.white,
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final String option = options.elementAt(index);
-                  return InkWell(
-                    onTap: () => onSelected(option),
-                    child: Padding(
-                      padding: const EdgeInsets.all(15.0),
-                      child: Text(
-                        option,
-                        style: TextStyle(
-                          color: isDark ? Colors.white70 : Colors.black87,
-                        ),
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
-          );
-        },
+          ),
+      optionsViewBuilder: (context, onSelected, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 4.0,
+          borderRadius: BorderRadius.circular(14),
+          color: isDark ? const Color(0xFF1A1C20) : Colors.white,
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            itemCount: options.length,
+            itemBuilder: (context, index) => InkWell(
+              onTap: () => onSelected(options.elementAt(index)),
+              child: Padding(
+                padding: const EdgeInsets.all(15.0),
+                child: Text(
+                  options.elementAt(index),
+                  style: TextStyle(
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1124,14 +1414,12 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
           value: _selectedGender,
           isExpanded: true,
           style: TextStyle(color: isDark ? Colors.white : Colors.black),
-          items: ['Male', 'Female', 'Other'].map((String value) {
-            return DropdownMenuItem<String>(value: value, child: Text(value));
-          }).toList(),
-          onChanged: (String? newValue) {
+          items: ['Male', 'Female', 'Other']
+              .map((val) => DropdownMenuItem(value: val, child: Text(val)))
+              .toList(),
+          onChanged: (val) {
             HapticFeedback.selectionClick();
-            setState(() {
-              _selectedGender = newValue!;
-            });
+            setState(() => _selectedGender = val!);
             _onTextChanged();
           },
         ),
@@ -1140,41 +1428,42 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   }
 
   Widget _buildResumeBox(bool isDark, Color cardBg) {
+    final bool hasResume =
+        _selectedResumeBytes != null || _uploadedResumeUrl != null;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: [
-              const Icon(
-                Icons.description,
-                color: AppTheme.primaryGold,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'Resume',
+            children: const [
+              Icon(Icons.description, color: AppTheme.primaryGold, size: 20),
+              SizedBox(width: 10),
+              Text(
+                'Resume *',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ],
           ),
           const SizedBox(height: 15),
-          if (_selectedResumeBytes != null || _uploadedResumeUrl != null)
+          if (hasResume)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(15),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.primaryGold.withOpacity(0.1),
+                color: AppTheme.primaryGold.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: AppTheme.primaryGold.withOpacity(0.3),
+                  color: AppTheme.primaryGold.withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
@@ -1203,42 +1492,41 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
                     ),
                     onPressed: _handlePdfPreview,
                   ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    onPressed: _deleteResume,
+                  ),
                 ],
               ),
             )
           else
-            Container(
-              width: double.infinity,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
+            InkWell(
+              onTap: _pickResume,
+              child: Container(
+                width: double.infinity,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () async {
-                    await _pickResume();
-                  },
-                  child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.upload_file,
-                          color: AppTheme.primaryGold,
-                          size: 24,
-                        ),
-                        SizedBox(height: 5),
-                        Text(
-                          'Upload Resume',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(
+                      Icons.upload_file,
+                      color: AppTheme.primaryGold,
+                      size: 24,
                     ),
-                  ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Upload Resume (Mandatory)',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1248,31 +1536,66 @@ class _SetupProfileScreenState extends State<SetupProfileScreen>
   }
 
   Widget _buildSaveButton(bool isDark) {
-    Color btnColor = isDark ? AppTheme.primaryGold : AppTheme.primaryDark;
     final bool isButtonDisabled = !_isFormValid() || _isLoading;
-
-    return Container(
-      width: double.infinity,
-      height: 60,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          if (!isButtonDisabled)
-            BoxShadow(
-              color: btnColor.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-        ],
-      ),
-      child: CustomButton(
-        text: 'SAVE PROFILE',
-        onPressed: isButtonDisabled ? null : _saveProfile,
-        variant: ButtonVariant.primary,
-        size: ButtonSize.medium,
-        isLoading: _isLoading,
-        isFullWidth: true,
-      ),
+    return CustomButton(
+      text: 'SAVE PROFILE',
+      onPressed: isButtonDisabled ? null : _saveProfile,
+      variant: ButtonVariant.primary,
+      size: ButtonSize.medium,
+      isLoading: _isLoading,
+      isFullWidth: true,
     );
   }
+}
+
+class MeshGradientPainter extends CustomPainter {
+  final double animationValue;
+  final bool isDark;
+  MeshGradientPainter({required this.animationValue, required this.isDark});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Color color1 = isDark
+        ? const Color(0xFFCC5500).withValues(alpha: 0.6)
+        : const Color(0xFFFFDAB9).withValues(alpha: 0.8);
+    final Color color2 = isDark
+        ? const Color(0xFFC2A984).withValues(alpha: 0.5)
+        : const Color(0xFFEADDCA).withValues(alpha: 0.7);
+    final double w = size.width, h = size.height;
+    final double x1 =
+        w * 0.5 + math.sin(animationValue * math.pi * 2) * w * 0.3;
+    final double y1 =
+        h * 0.2 + math.cos(animationValue * math.pi * 2) * h * 0.2;
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, w, h),
+      Paint()
+        ..color = isDark ? const Color(0xFF141619) : const Color(0xFFF8F9FA),
+    );
+    final Paint paint1 = Paint()
+      ..shader = RadialGradient(
+        colors: [color1, color1.withValues(alpha: 0.0)],
+        stops: const [0.2, 1.0],
+      ).createShader(Rect.fromCircle(center: Offset(x1, y1), radius: w * 0.8))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 50);
+    canvas.drawCircle(Offset(x1, y1), w * 0.8, paint1);
+    final Paint arcPaint = Paint()
+      ..color = isDark
+          ? Colors.white.withValues(alpha: 0.03)
+          : Colors.black.withValues(alpha: 0.02)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(w * 0.5, h * 0.5),
+        width: w * 1.5,
+        height: w * 1.5,
+      ),
+      0,
+      math.pi * 1.5,
+      false,
+      arcPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant MeshGradientPainter oldDelegate) => true;
 }

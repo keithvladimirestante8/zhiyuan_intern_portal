@@ -211,6 +211,16 @@ class _LoginScreenState extends State<LoginScreen>
           await prefs.setString('last_logged_in_user_id', currentUserId);
 
           await _logSecurityEvent('biometric_login_success', currentUserId);
+
+          if (!userCredential.user!.emailVerified) {
+            await FirebaseAuth.instance.signOut();
+            AppSnackbar.error(
+              context,
+              'Email not verified. Please check your inbox.',
+            );
+            return;
+          }
+
           AppSnackbar.success(context, 'Login successful.');
           await _navigateToUserScreen(userCredential.user!);
         }
@@ -428,6 +438,15 @@ class _LoginScreenState extends State<LoginScreen>
         await _authorizeUserOnDevice(user.uid);
         await prefs.setString('last_logged_in_user_id', user.uid);
         await _logSecurityEvent('login_success', user.uid);
+
+        if (!user.emailVerified) {
+          await FirebaseAuth.instance.signOut();
+          AppSnackbar.error(
+            context,
+            'Email not verified. Please check your inbox.',
+          );
+          return;
+        }
 
         await _navigateToUserScreen(user);
       }
